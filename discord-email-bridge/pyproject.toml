@@ -1,0 +1,10 @@
+[project]
+name = "discord-email-bridge"
+version = "0.1.0"
+description = "Minimal one-person Discord <-> Email bridge (MVP)"
+requires-python = ">=3.10"
+dependencies = [
+    "discord.py>=2.3,<3",
+    "imap-tools>=1.5,<2",
+    "python-dotenv>=1.0,<2",
+]

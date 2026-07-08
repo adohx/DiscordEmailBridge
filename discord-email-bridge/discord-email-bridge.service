@@ -1,0 +1,20 @@
+[Unit]
+Description=Discord Email Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Update these paths for your deployment.
+WorkingDirectory=/opt/discord-email-bridge
+ExecStart=/home/discordbridge/.local/bin/uv run --project /opt/discord-email-bridge main.py
+Restart=on-failure
+RestartSec=10
+User=discordbridge
+
+# .env lives in WorkingDirectory and is loaded by python-dotenv at startup.
+# `uv run` will create/reuse .venv under WorkingDirectory and install deps
+# from pyproject.toml / uv.lock automatically on first start.
+
+[Install]
+WantedBy=multi-user.target
