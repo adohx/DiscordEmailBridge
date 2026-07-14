@@ -28,6 +28,8 @@ The screenshots in the User Manual start from "you already have an invite link."
 
    > ![image-20260714181139413](zh/assets/image-20260714181139413.png)
 
+   **Leave Public Bot on its default (enabled) setting — don't turn it off.** In theory, turning it off would stop other people from adding the bot to their own Server, but in practice this toggle caused extra trouble (e.g. after the bot had already been invited somewhere). The actual access control already happens in code and doesn't depend on this setting: `discord_client.py`'s `_is_bridged_channel` only acts on messages where `channel.id == DISCORD_CHANNEL_ID` (Channel IDs are globally-unique Discord snowflakes, so no other Server could accidentally collide with it), and if `DISCORD_GUILD_ID` is set it also checks the Server ID first. In other words, even if this bot gets added to someone else's Server, it will only ever read or write in the one channel we configured — everything else is ignored.
+
 4. Click **Reset Token** to get the Bot Token, copy and save it — you'll fill it into `DISCORD_BOT_TOKEN` in `.env` later. **This Token must never be committed to Git or shared with anyone.**
 
    > ![image-20260714181210911](zh/assets/image-20260714181210911.png)
@@ -39,7 +41,7 @@ The screenshots in the User Manual start from "you already have an invite link."
    >
    > ![image-20260714181654636](zh/assets/image-20260714181654636.png)
 
-7. (Optional) If you want the Bot to only be active in one specific Server, also note down that Server's ID (right-click the Server icon → Copy Server ID) — you'll fill it into `DISCORD_GUILD_ID` later.
+7. (Recommended) Note down the target Server's ID (right-click the Server icon → Copy Server ID) — you'll fill it into `DISCORD_GUILD_ID` later. This field is technically optional and doesn't affect functionality (the `DISCORD_CHANNEL_ID` filter is already sufficient on its own), but since Public Bot is being left on, having this extra Server-ID check is cheap insurance.
 
 ## 1.3 Configuring Startup Parameters
 
