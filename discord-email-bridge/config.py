@@ -3,6 +3,7 @@
 import logging
 import os
 from dataclasses import dataclass
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -17,6 +18,7 @@ class ConfigError(Exception):
 class Config:
     discord_bot_token: str
     discord_channel_id: int
+    discord_guild_id: Optional[int]
 
     smtp_host: str
     smtp_port: int
@@ -34,6 +36,7 @@ class Config:
 
     email_poll_interval_seconds: int
     state_file: str
+    email_message_id_domain: str
 
 
 def _require(name: str) -> str:
@@ -51,6 +54,16 @@ def _require_int(name: str) -> int:
         raise ConfigError(f"Environment variable {name} must be an integer, got: {raw!r}") from exc
 
 
+def _optional_int(name: str) -> Optional[int]:
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"Environment variable {name} must be an integer, got: {raw!r}") from exc
+
+
 def load_config() -> Config:
     """Load configuration from .env / environment variables.
 
@@ -61,6 +74,7 @@ def load_config() -> Config:
     config = Config(
         discord_bot_token=_require("DISCORD_BOT_TOKEN"),
         discord_channel_id=_require_int("DISCORD_CHANNEL_ID"),
+        discord_guild_id=_optional_int("DISCORD_GUILD_ID"),
         smtp_host=_require("SMTP_HOST"),
         smtp_port=_require_int("SMTP_PORT"),
         smtp_user=_require("SMTP_USER"),
@@ -74,6 +88,7 @@ def load_config() -> Config:
         allowed_email_sender=_require("ALLOWED_EMAIL_SENDER"),
         email_poll_interval_seconds=_require_int("EMAIL_POLL_INTERVAL_SECONDS"),
         state_file=os.getenv("STATE_FILE", "state.json"),
+        email_message_id_domain=os.getenv("EMAIL_MESSAGE_ID_DOMAIN", "bridge.local"),
     )
 
     logger.info("Configuration loaded successfully.")
