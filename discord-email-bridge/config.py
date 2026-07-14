@@ -38,6 +38,8 @@ class Config:
     state_file: str
     email_message_id_domain: str
 
+    include_deleted_content: bool
+
 
 def _require(name: str) -> str:
     value = os.getenv(name)
@@ -62,6 +64,13 @@ def _optional_int(name: str) -> Optional[int]:
         return int(raw)
     except ValueError as exc:
         raise ConfigError(f"Environment variable {name} must be an integer, got: {raw!r}") from exc
+
+
+def _bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def load_config() -> Config:
@@ -89,6 +98,7 @@ def load_config() -> Config:
         email_poll_interval_seconds=_require_int("EMAIL_POLL_INTERVAL_SECONDS"),
         state_file=os.getenv("STATE_FILE", "state.json"),
         email_message_id_domain=os.getenv("EMAIL_MESSAGE_ID_DOMAIN", "bridge.local"),
+        include_deleted_content=_bool("INCLUDE_DELETED_CONTENT", True),
     )
 
     logger.info("Configuration loaded successfully.")

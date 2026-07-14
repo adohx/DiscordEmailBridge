@@ -15,6 +15,13 @@ logger = logging.getLogger(__name__)
 STATE_VERSION = 1
 
 
+def normalize_content(text: Optional[str]) -> str:
+    """Normalize message text for edit comparison (see discord-message-edit-delete-sync.md #6)."""
+    if not text:
+        return ""
+    return text.replace("\r\n", "\n").strip()
+
+
 def normalize_message_id(value: Optional[str]) -> Optional[str]:
     """Normalize an email Message-ID to the canonical '<...>' form.
 
@@ -147,6 +154,14 @@ class State:
         return None
 
     def add_mapping(self, mapping: dict) -> None:
+        # Edit/delete lifecycle fields (see discord-message-edit-delete-sync.md #4).
+        mapping.setdefault("status", "active")
+        mapping.setdefault("edit_version", 0)
+        mapping.setdefault("last_edit_fingerprint", None)
+        mapping.setdefault("edited_at", None)
+        mapping.setdefault("deleted_at", None)
+        mapping.setdefault("delete_notification_sent", False)
+
         discord_message_id = mapping["discord_message_id"]
         self.message_mappings[discord_message_id] = mapping
 
@@ -155,6 +170,37 @@ class State:
             self.email_message_index[email_message_id] = discord_message_id
 
         self._save()
+
+    def record_edit(
+        self,
+        discord_message_id: str,
+        new_content: str,
+        fingerprint: str,
+        edited_at: str,
+    ) -> None:
+        """Persist a successfully-notified edit. Only call after the notification email is sent."""
+        mapping = self.message_mappings.get(discord_message_id)
+        if mapping is None:
+            return
+        mapping["content"] = new_content
+        mapping["edit_version"] = mapping.get("edit_version", 0) + 1
+        mapping["last_edit_fingerprint"] = fingerprint
+        mapping["edited_at"] = edited_at
+        self._save()
+
+    def record_delete(self, discord_message_id: str, deleted_at: str) -> None:
+        """Persist a successfully-notified delete. Only call after the notification email is sent."""
+        mapping = self.message_mappings.get(discord_message_id)
+        if mapping is None:
+            return
+        mapping["status"] = "deleted"
+        mapping["deleted_at"] = deleted_at
+        mapping["delete_notification_sent"] = True
+        self._save()
+
+    def is_deleted(self, discord_message_id: str) -> bool:
+        mapping = self.message_mappings.get(discord_message_id)
+        return bool(mapping and mapping.get("status") == "deleted")
 
     # --- Email dedup -------------------------------------------------------
 

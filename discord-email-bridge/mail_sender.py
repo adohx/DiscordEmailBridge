@@ -7,6 +7,7 @@ docs/discord-email-message-mapping.md.
 
 import logging
 import smtplib
+import uuid
 from email.message import EmailMessage
 from typing import Optional, Sequence, Tuple
 
@@ -89,6 +90,15 @@ def send_discord_message_as_email(
 
     message.set_content(_build_body(author_name, content, reply_context))
 
+    _send(config, message)
+
+
+def _send(config: Config, message: EmailMessage) -> None:
+    """Deliver a fully-built EmailMessage over SMTP.
+
+    Raises smtplib.SMTPException / OSError on failure; caller is responsible
+    for catching and logging so one failed email doesn't crash the program.
+    """
     with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=30) as smtp:
         smtp.starttls()
         smtp.login(config.smtp_user, config.smtp_password)
@@ -98,5 +108,81 @@ def send_discord_message_as_email(
         "Sent email to %s (subject: %s, message-id: %s)",
         config.target_email,
         message["Subject"],
-        email_message_id,
+        message["Message-ID"],
     )
+
+
+def send_edit_notification(
+    config: Config,
+    author_name: str,
+    old_content: str,
+    new_content: str,
+    original_email_message_id: str,
+    discord_message_id: str,
+    edit_version: int,
+) -> str:
+    """Send an [Updated] notification for an edited Discord message.
+
+    Returns the new notification email's Message-ID. Raises
+    smtplib.SMTPException / OSError on failure; caller must not update state
+    until this call succeeds. See discord-message-edit-delete-sync.md #7-8.
+    """
+    email_message_id = (
+        f"<edit-{discord_message_id}-{edit_version}-{uuid.uuid4().hex[:8]}@{config.email_message_id_domain}>"
+    )
+    original_email_message_id = normalize_message_id(original_email_message_id)
+
+    message = EmailMessage()
+    message["Subject"] = f"[Updated] Discord message from {author_name}"
+    message["From"] = config.smtp_from
+    message["To"] = config.target_email
+    message["Message-ID"] = email_message_id
+    message["In-Reply-To"] = original_email_message_id
+    message["References"] = original_email_message_id
+    message["X-Discord-Bridge-Event"] = "edited"
+    message["X-Discord-Message-ID"] = discord_message_id
+
+    message.set_content(
+        f"{author_name} edited a Discord message.\n\n"
+        f"Previous version:\n\n{old_content}\n\n"
+        f"Updated version:\n\n{new_content}"
+    )
+
+    _send(config, message)
+    return email_message_id
+
+
+def send_delete_notification(
+    config: Config,
+    author_name: str,
+    original_content: Optional[str],
+    original_email_message_id: str,
+    discord_message_id: str,
+) -> str:
+    """Send a [Deleted] notification for a deleted Discord message.
+
+    Returns the new notification email's Message-ID. Raises
+    smtplib.SMTPException / OSError on failure; caller must not update state
+    until this call succeeds. See discord-message-edit-delete-sync.md #10-11.
+    """
+    email_message_id = f"<delete-{discord_message_id}-{uuid.uuid4().hex[:8]}@{config.email_message_id_domain}>"
+    original_email_message_id = normalize_message_id(original_email_message_id)
+
+    message = EmailMessage()
+    message["Subject"] = f"[Deleted] Discord message from {author_name}"
+    message["From"] = config.smtp_from
+    message["To"] = config.target_email
+    message["Message-ID"] = email_message_id
+    message["In-Reply-To"] = original_email_message_id
+    message["References"] = original_email_message_id
+    message["X-Discord-Bridge-Event"] = "deleted"
+    message["X-Discord-Message-ID"] = discord_message_id
+
+    if original_content:
+        body = f"A Discord message from {author_name} was deleted.\n\nOriginal message:\n\n{original_content}"
+    else:
+        body = f"A Discord message from {author_name} was deleted."
+    message.set_content(body)
+
+    _send(config, message)
+    return email_message_id

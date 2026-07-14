@@ -11,6 +11,7 @@ mapping this module maintains.
 """
 
 import asyncio
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ import mail_sender
 from config import Config, ConfigError, load_config
 from discord_client import BridgeClient, deliver_email_to_channel
 from mail_reader import IncomingEmail, poll_mailbox
-from state import State
+from state import State, normalize_content
 
 logger = logging.getLogger(__name__)
 
@@ -106,15 +107,119 @@ async def handle_discord_message(config: Config, state: State, message: discord.
     logger.info("Mapped Discord message %s to email %s.", discord_message_id, email_message_id)
 
 
+async def handle_message_edit(config: Config, state: State, message: discord.Message) -> None:
+    """Send an [Updated] notification email for an edited, previously-bridged Discord message.
+
+    See docs/discord-message-edit-delete-sync.md #5-8.
+    """
+    discord_message_id = str(message.id)
+    mapping = state.get_by_discord_message_id(discord_message_id)
+    if not mapping:
+        logger.info("Ignoring edit for unmapped Discord message %s.", discord_message_id)
+        return
+
+    if mapping.get("status") == "deleted":
+        logger.info("Ignoring edit for already-deleted Discord message %s.", discord_message_id)
+        return
+
+    old_content = normalize_content(mapping.get("content"))
+    new_content = normalize_content(message.content)
+    if old_content == new_content:
+        logger.info("Discord message %s edit has no content change, skipping.", discord_message_id)
+        return
+
+    fingerprint = hashlib.sha256(new_content.encode("utf-8")).hexdigest()
+    if fingerprint == mapping.get("last_edit_fingerprint"):
+        logger.info("Discord message %s edit fingerprint unchanged, skipping.", discord_message_id)
+        return
+
+    original_email_message_id = mapping.get("email_message_id")
+    if not original_email_message_id:
+        logger.error(
+            "Discord message %s has no original email Message-ID; cannot send edit notification.",
+            discord_message_id,
+        )
+        return
+
+    next_version = mapping.get("edit_version", 0) + 1
+
+    try:
+        await asyncio.to_thread(
+            mail_sender.send_edit_notification,
+            config,
+            mapping["author_name"],
+            old_content,
+            new_content,
+            original_email_message_id,
+            discord_message_id,
+            next_version,
+        )
+    except Exception:
+        logger.exception("SMTP error while sending edit notification for Discord message %s.", discord_message_id)
+        return
+
+    edited_at = datetime.now(timezone.utc).isoformat()
+    state.record_edit(discord_message_id, new_content, fingerprint, edited_at)
+    logger.info(
+        "Sent edit notification for Discord message %s (edit_version=%d).", discord_message_id, next_version
+    )
+
+
+async def handle_message_delete(config: Config, state: State, discord_message_id: str) -> None:
+    """Send a [Deleted] notification email for a deleted, previously-bridged Discord message.
+
+    See docs/discord-message-edit-delete-sync.md #9-11.
+    """
+    mapping = state.get_by_discord_message_id(discord_message_id)
+    if not mapping:
+        logger.info("Ignoring delete for unmapped Discord message %s.", discord_message_id)
+        return
+
+    if mapping.get("status") == "deleted" or mapping.get("delete_notification_sent"):
+        logger.info("Discord message %s already marked deleted; skipping duplicate notification.", discord_message_id)
+        return
+
+    original_email_message_id = mapping.get("email_message_id")
+    if not original_email_message_id:
+        logger.error(
+            "Discord message %s has no original email Message-ID; cannot send delete notification.",
+            discord_message_id,
+        )
+        return
+
+    original_content = mapping.get("content") if config.include_deleted_content else None
+
+    try:
+        await asyncio.to_thread(
+            mail_sender.send_delete_notification,
+            config,
+            mapping["author_name"],
+            original_content,
+            original_email_message_id,
+            discord_message_id,
+        )
+    except Exception:
+        logger.exception("SMTP error while sending delete notification for Discord message %s.", discord_message_id)
+        return
+
+    deleted_at = datetime.now(timezone.utc).isoformat()
+    state.record_delete(discord_message_id, deleted_at)
+    logger.info("Sent delete notification for Discord message %s.", discord_message_id)
+
+
 async def handle_incoming_email(
     client: BridgeClient, config: Config, state: State, incoming: IncomingEmail
 ) -> bool:
     """Deliver an email reply into Discord (as a real reply when possible) and record the mapping."""
+    parent_deleted = bool(
+        incoming.parent_discord_message_id and state.is_deleted(incoming.parent_discord_message_id)
+    )
     discord_message, was_real_reply = await deliver_email_to_channel(
         client,
         config.discord_channel_id,
         incoming.body,
         reply_to_discord_message_id=incoming.parent_discord_message_id,
+        parent_deleted=parent_deleted,
     )
     if discord_message is None:
         return False
@@ -178,7 +283,13 @@ async def main() -> None:
     async def on_discord_message(message: discord.Message) -> None:
         await handle_discord_message(config, state, message)
 
-    client = BridgeClient(config, on_discord_message)
+    async def on_discord_message_edit(message: discord.Message) -> None:
+        await handle_message_edit(config, state, message)
+
+    async def on_discord_message_delete(discord_message_id: str) -> None:
+        await handle_message_delete(config, state, discord_message_id)
+
+    client = BridgeClient(config, on_discord_message, on_discord_message_edit, on_discord_message_delete)
 
     try:
         await asyncio.gather(
