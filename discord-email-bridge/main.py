@@ -13,8 +13,10 @@ mapping this module maintains.
 import asyncio
 import hashlib
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional
 
 import discord
@@ -33,6 +35,17 @@ def setup_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+
+def get_version() -> str:
+    """Read the project version straight from pyproject.toml (the single source of truth)."""
+    pyproject_path = Path(__file__).resolve().parent / "pyproject.toml"
+    try:
+        text = pyproject_path.read_text(encoding="utf-8")
+    except OSError:
+        return "unknown"
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    return match.group(1) if match else "unknown"
 
 
 async def handle_discord_message(config: Config, state: State, message: discord.Message) -> None:
@@ -270,7 +283,7 @@ async def email_poll_loop(client: BridgeClient, config: Config, state: State) ->
 
 async def main() -> None:
     setup_logging()
-    logger.info("Starting Discord Email Bridge...")
+    logger.info("Starting Discord Email Bridge v%s...", get_version())
 
     try:
         config = load_config()
