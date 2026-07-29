@@ -30,14 +30,31 @@ _QUOTE_MARKERS = [
     re.compile(r"^\s*Subject:\s*.+$", re.IGNORECASE),
 ]
 
+# Gmail's "forward" marker. Unlike the reply-quote markers above, what
+# follows this is NOT old content the recipient already has -- it's the
+# whole reason the person forwarded the email -- so it must not be dropped.
+# Only the header block directly under the marker (From/Date/Subject/To/Cc)
+# is skipped; the real forwarded body after it is kept.
+_FORWARD_MARKER = re.compile(r"^\s*-{2,}\s*Forwarded message\s*-{2,}\s*$", re.IGNORECASE)
+_FORWARD_HEADER_FIELD = re.compile(r"^\s*(From|Date|Sent|To|Cc|Subject):\s*.*$", re.IGNORECASE)
+
 # Discord's default per-file upload limit is 10 MB on non-boosted servers;
 # stay comfortably under it.
 MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 
+# Non-image attachment types forwarded as-is (uploaded to Discord as a plain
+# file, not rendered/converted). Exact MIME type match, unlike images which
+# match on the "image/" prefix.
+_ALLOWED_DOCUMENT_CONTENT_TYPES = {
+    "application/pdf",
+    "application/msword",  # .doc
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+}
+
 
 @dataclass
 class EmailAttachment:
-    """An image attachment extracted from an email, ready to forward to Discord."""
+    """An attachment extracted from an email, ready to forward to Discord as a file."""
 
     filename: str
     content_type: str
@@ -68,11 +85,26 @@ OnValidEmail = Callable[[IncomingEmail], bool]
 
 
 def strip_quoted_history(text: str) -> str:
-    """Drop quoted reply history and '>' quote lines from an email body."""
+    """Drop quoted reply history and '>' quote lines from an email body.
+
+    A forwarded message's header block is skipped rather than triggering a
+    hard stop like the reply-quote markers do, since the content after it is
+    new, not something the recipient has already seen.
+    """
     lines = text.splitlines()
     kept = []
+    in_forward_header = False
     for line in lines:
+        if in_forward_header:
+            if not line.strip() or _FORWARD_HEADER_FIELD.match(line):
+                continue
+            in_forward_header = False
+
         if line.strip().startswith(">"):
+            continue
+        if _FORWARD_MARKER.match(line):
+            in_forward_header = True
+            kept.append(line)
             continue
         if any(pattern.match(line) for pattern in _QUOTE_MARKERS):
             break
@@ -145,28 +177,36 @@ def _extract_plain_text(msg: MailMessage) -> Optional[str]:
     return None
 
 
-def _extract_image_attachments(msg: MailMessage) -> Tuple[List[EmailAttachment], List[str]]:
-    """Split an email's attachments into forwardable images and skip notices.
+def _is_forwardable_content_type(content_type: str) -> bool:
+    return content_type.startswith("image/") or content_type in _ALLOWED_DOCUMENT_CONTENT_TYPES
 
-    Only image/* attachments under MAX_ATTACHMENT_BYTES are forwarded to
-    Discord. Everything else (wrong format, too large) is dropped, but always
-    produces a human-readable note so the Discord side knows something was
-    left out instead of it silently vanishing.
+
+def _extract_forwardable_attachments(msg: MailMessage) -> Tuple[List[EmailAttachment], List[str]]:
+    """Split an email's attachments into forwardable files and skip notices.
+
+    Only images and a small set of document types (PDF, DOC, DOCX) under
+    MAX_ATTACHMENT_BYTES are forwarded to Discord, as-is -- no rendering or
+    conversion. Everything else (wrong format, too large) is dropped, but
+    always produces a human-readable note so the Discord side knows something
+    was left out instead of it silently vanishing.
     """
-    images: List[EmailAttachment] = []
+    attachments: List[EmailAttachment] = []
     notes: List[str] = []
     for att in msg.attachments:
         name = att.filename or "(unnamed attachment)"
-        if not att.content_type.startswith("image/"):
-            notes.append(f"Attachment skipped: {name} ({att.content_type}) — unsupported format, only images are forwarded.")
+        if not _is_forwardable_content_type(att.content_type):
+            notes.append(
+                f"Attachment skipped: {name} ({att.content_type}) — unsupported format, only images, "
+                "PDF, DOC, and DOCX are forwarded."
+            )
             continue
         if att.size > MAX_ATTACHMENT_BYTES:
             size_mb = att.size / (1024 * 1024)
             limit_mb = MAX_ATTACHMENT_BYTES // (1024 * 1024)
             notes.append(f"Attachment skipped: {name} ({size_mb:.1f} MB) — exceeds the {limit_mb} MB forwarding limit.")
             continue
-        images.append(EmailAttachment(filename=name, content_type=att.content_type, payload=att.payload))
-    return images, notes
+        attachments.append(EmailAttachment(filename=name, content_type=att.content_type, payload=att.payload))
+    return attachments, notes
 
 
 def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> None:
@@ -201,16 +241,16 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
             body = _extract_plain_text(msg)
             clean_body = strip_quoted_history(body) if body else ""
 
-            images, attachment_notes = _extract_image_attachments(msg)
-            if images or attachment_notes:
+            attachments, attachment_notes = _extract_forwardable_attachments(msg)
+            if attachments or attachment_notes:
                 logger.info(
-                    "Email %s has %d image attachment(s) to forward and %d skipped.",
+                    "Email %s has %d attachment(s) to forward and %d skipped.",
                     email_id,
-                    len(images),
+                    len(attachments),
                     len(attachment_notes),
                 )
 
-            if not clean_body and not images and not attachment_notes:
+            if not clean_body and not attachments and not attachment_notes:
                 logger.info("Email %s has no forwardable content (no text, no attachments), skipping.", email_id)
                 mailbox.flag(msg.uid, MailMessageFlags.SEEN, True)
                 continue
@@ -236,7 +276,7 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
                 in_reply_to=in_reply_to,
                 references=references,
                 parent_discord_message_id=parent_discord_message_id,
-                attachments=images,
+                attachments=attachments,
                 attachment_notes=attachment_notes,
             )
 

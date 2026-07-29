@@ -5,7 +5,7 @@ import pytest
 from conftest import make_config
 from mail_reader import (
     MAX_ATTACHMENT_BYTES,
-    _extract_image_attachments,
+    _extract_forwardable_attachments,
     _extract_plain_text,
     _get_email_id,
     _parse_references,
@@ -54,6 +54,46 @@ class TestStripQuotedHistory:
 
     def test_returns_empty_for_pure_quote(self):
         assert strip_quoted_history("> only quoted content") == ""
+
+    def test_keeps_content_after_forwarded_message_header_block(self):
+        text = (
+            "FYI\n"
+            "---------- Forwarded message ---------\n"
+            "From: Someone <someone@example.com>\n"
+            "Date: Mon, Jan 1, 2026 at 10:00 AM\n"
+            "Subject: Project update\n"
+            "To: Jason <jason@example.com>\n"
+            "\n"
+            "Here is the actual forwarded content that must survive."
+        )
+        assert strip_quoted_history(text) == (
+            "FYI\n"
+            "---------- Forwarded message ---------\n"
+            "Here is the actual forwarded content that must survive."
+        )
+
+    def test_forwarded_content_with_gt_quotes_still_stripped(self):
+        text = (
+            "---------- Forwarded message ---------\n"
+            "From: Someone <someone@example.com>\n"
+            "Subject: hi\n"
+            "\n"
+            "real content\n"
+            "> some quoted line inside the forward\n"
+        )
+        assert strip_quoted_history(text) == "---------- Forwarded message ---------\nreal content"
+
+    def test_forwarded_content_still_stops_at_a_later_reply_marker(self):
+        text = (
+            "---------- Forwarded message ---------\n"
+            "From: Someone <someone@example.com>\n"
+            "Subject: hi\n"
+            "\n"
+            "real content\n"
+            "On Mon, Jan 1, 2026 Alice wrote:\n"
+            "old quoted stuff\n"
+        )
+        assert strip_quoted_history(text) == "---------- Forwarded message ---------\nreal content"
 
 
 class TestGetEmailId:
