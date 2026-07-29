@@ -27,6 +27,8 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   logic in `state.py`, `mail_reader.py`, `discord_client.py`, `mail_sender.py`,
   plus handler-level tests in `main.py` with Discord/SMTP mocked out. Run with
   `uv run pytest` from `discord-email-bridge/`.
+- CI (`.github/workflows/tests.yml`): runs the test suite on every push/PR to
+  `main` via GitHub Actions.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make
