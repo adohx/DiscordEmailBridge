@@ -1,11 +1,13 @@
 """Discord side of the bridge: receive channel messages, deliver email replies back."""
 
+import io
 import logging
-from typing import Awaitable, Callable, Optional, Tuple
+from typing import Awaitable, Callable, List, Optional, Sequence, Tuple
 
 import discord
 
 from config import Config
+from mail_reader import EmailAttachment
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,13 @@ def clean_discord_mentions(text: str) -> str:
     return text.replace("@everyone", "＠everyone").replace("@here", "＠here")
 
 
-def format_email_reply_for_discord(text: str, *, unavailable: bool = False, deleted: bool = False) -> str:
+def format_email_reply_for_discord(
+    text: str,
+    *,
+    unavailable: bool = False,
+    deleted: bool = False,
+    notes: Optional[Sequence[str]] = None,
+) -> str:
     if deleted:
         prefix = EMAIL_REPLY_DELETED_PREFIX
     elif unavailable:
@@ -52,7 +60,31 @@ def format_email_reply_for_discord(text: str, *, unavailable: bool = False, dele
         truncate_to = max(body_budget - len(TRUNCATION_NOTICE), 0)
         cleaned = cleaned[:truncate_to] + TRUNCATION_NOTICE
 
-    return prefix + cleaned
+    formatted = prefix + cleaned
+    if notes:
+        separator = "\n\n" if cleaned else ""
+        formatted += separator + "\n".join(f"⚠️ {note}" for note in notes)
+    return formatted
+
+
+def _build_discord_files(attachments: Sequence[EmailAttachment]) -> List[discord.File]:
+    """Build fresh discord.File objects -- they're single-use and can't be resent."""
+    return [discord.File(io.BytesIO(att.payload), filename=att.filename) for att in attachments]
+
+
+async def _send_with_attachment_fallback(send, text: str, files: List[discord.File]) -> discord.Message:
+    """Try sending with image files attached; on failure, retry text-only with a notice.
+
+    `send` is an async callable taking (content, files) -> discord.Message. Raises
+    discord.DiscordException if even the text-only retry fails.
+    """
+    if files:
+        try:
+            return await send(text, files)
+        except discord.DiscordException:
+            logger.exception("Failed to upload %d image attachment(s) to Discord; retrying without them.", len(files))
+            text += f"\n\n⚠️ {len(files)} image attachment(s) failed to upload and were not forwarded."
+    return await send(text, None)
 
 
 class BridgeClient(discord.Client):
@@ -157,6 +189,8 @@ async def deliver_email_to_channel(
     text: str,
     reply_to_discord_message_id: Optional[str] = None,
     parent_deleted: bool = False,
+    attachments: Optional[Sequence[EmailAttachment]] = None,
+    attachment_notes: Optional[Sequence[str]] = None,
 ) -> Tuple[Optional[discord.Message], bool]:
     """Deliver an email-derived message into the bridged Discord channel.
 
@@ -167,6 +201,13 @@ async def deliver_email_to_channel(
     If parent_deleted is True, the parent is already known (via local state)
     to be deleted, so no reply attempt is made at all -- see
     discord-message-edit-delete-sync.md #12.
+
+    `attachments` are image attachments extracted from the source email; they
+    are uploaded as Discord files. `attachment_notes` are human-readable
+    notices about attachments that were NOT forwarded (wrong format, too
+    large) -- always appended to the message text so nothing is dropped
+    silently. If uploading the images themselves fails, the message is
+    retried without them and a notice is appended too.
 
     Returns (sent_message, was_real_reply). sent_message is None on failure.
     """
@@ -183,12 +224,18 @@ async def deliver_email_to_channel(
             "Discord message %s (parent of an email reply) was deleted; sending a normal channel message instead.",
             reply_to_discord_message_id,
         )
-        formatted = format_email_reply_for_discord(text, deleted=True)
+        formatted = format_email_reply_for_discord(text, deleted=True, notes=attachment_notes)
     elif reply_to_discord_message_id:
         try:
             original_message = await channel.fetch_message(int(reply_to_discord_message_id))
-            formatted = format_email_reply_for_discord(text, unavailable=False)
-            sent = await original_message.reply(formatted, allowed_mentions=discord.AllowedMentions.none())
+            formatted = format_email_reply_for_discord(text, unavailable=False, notes=attachment_notes)
+
+            async def _reply(content: str, files: Optional[List[discord.File]]) -> discord.Message:
+                return await original_message.reply(
+                    content, files=files or None, allowed_mentions=discord.AllowedMentions.none()
+                )
+
+            sent = await _send_with_attachment_fallback(_reply, formatted, _build_discord_files(attachments or []))
             return sent, True
         except (discord.DiscordException, ValueError) as exc:
             logger.warning(
@@ -196,12 +243,15 @@ async def deliver_email_to_channel(
                 reply_to_discord_message_id,
                 exc,
             )
-            formatted = format_email_reply_for_discord(text, unavailable=True)
+            formatted = format_email_reply_for_discord(text, unavailable=True, notes=attachment_notes)
     else:
-        formatted = format_email_reply_for_discord(text, unavailable=False)
+        formatted = format_email_reply_for_discord(text, unavailable=False, notes=attachment_notes)
 
     try:
-        sent = await channel.send(formatted, allowed_mentions=discord.AllowedMentions.none())
+        async def _channel_send(content: str, files: Optional[List[discord.File]]) -> discord.Message:
+            return await channel.send(content, files=files or None, allowed_mentions=discord.AllowedMentions.none())
+
+        sent = await _send_with_attachment_fallback(_channel_send, formatted, _build_discord_files(attachments or []))
         return sent, False
     except discord.DiscordException as exc:
         logger.error("Discord API error while sending message to channel %s: %s", channel_id, exc)

@@ -8,8 +8,8 @@ main.py to deliver it to Discord. See docs/discord-email-message-mapping.md.
 
 import logging
 import re
-from dataclasses import dataclass
-from typing import Callable, List, Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional, Tuple
 
 from imap_tools import AND, MailBox, MailMessage, MailMessageFlags
 
@@ -30,6 +30,19 @@ _QUOTE_MARKERS = [
     re.compile(r"^\s*Subject:\s*.+$", re.IGNORECASE),
 ]
 
+# Discord's default per-file upload limit is 10 MB on non-boosted servers;
+# stay comfortably under it.
+MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
+
+@dataclass
+class EmailAttachment:
+    """An image attachment extracted from an email, ready to forward to Discord."""
+
+    filename: str
+    content_type: str
+    payload: bytes
+
 
 @dataclass
 class IncomingEmail:
@@ -41,6 +54,11 @@ class IncomingEmail:
     in_reply_to: Optional[str]
     references: List[str]
     parent_discord_message_id: Optional[str]
+    attachments: List[EmailAttachment] = field(default_factory=list)
+    # Human-readable notices for attachments that were NOT forwarded (wrong
+    # format, too large, ...) -- always shown on the Discord side so a
+    # dropped attachment is never silent. See mail-attachment handling.
+    attachment_notes: List[str] = field(default_factory=list)
 
 
 # Callback signature: (IncomingEmail) -> True if successfully delivered to
@@ -118,8 +136,31 @@ def _extract_plain_text(msg: MailMessage) -> Optional[str]:
     if msg.html:
         logger.info("Email %s only has an HTML body; HTML emails are not supported in MVP, skipping.", msg.uid)
         return None
-    logger.info("Email %s has an empty body, skipping.", msg.uid)
     return None
+
+
+def _extract_image_attachments(msg: MailMessage) -> Tuple[List[EmailAttachment], List[str]]:
+    """Split an email's attachments into forwardable images and skip notices.
+
+    Only image/* attachments under MAX_ATTACHMENT_BYTES are forwarded to
+    Discord. Everything else (wrong format, too large) is dropped, but always
+    produces a human-readable note so the Discord side knows something was
+    left out instead of it silently vanishing.
+    """
+    images: List[EmailAttachment] = []
+    notes: List[str] = []
+    for att in msg.attachments:
+        name = att.filename or "(unnamed attachment)"
+        if not att.content_type.startswith("image/"):
+            notes.append(f"Attachment skipped: {name} ({att.content_type}) — unsupported format, only images are forwarded.")
+            continue
+        if att.size > MAX_ATTACHMENT_BYTES:
+            size_mb = att.size / (1024 * 1024)
+            limit_mb = MAX_ATTACHMENT_BYTES // (1024 * 1024)
+            notes.append(f"Attachment skipped: {name} ({size_mb:.1f} MB) — exceeds the {limit_mb} MB forwarding limit.")
+            continue
+        images.append(EmailAttachment(filename=name, content_type=att.content_type, payload=att.payload))
+    return images, notes
 
 
 def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> None:
@@ -151,13 +192,19 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
                 continue
 
             body = _extract_plain_text(msg)
-            if body is None:
-                mailbox.flag(msg.uid, MailMessageFlags.SEEN, True)
-                continue
+            clean_body = strip_quoted_history(body) if body else ""
 
-            clean_body = strip_quoted_history(body)
-            if not clean_body:
-                logger.info("Email %s has no content after removing quoted history, skipping.", email_id)
+            images, attachment_notes = _extract_image_attachments(msg)
+            if images or attachment_notes:
+                logger.info(
+                    "Email %s has %d image attachment(s) to forward and %d skipped.",
+                    email_id,
+                    len(images),
+                    len(attachment_notes),
+                )
+
+            if not clean_body and not images and not attachment_notes:
+                logger.info("Email %s has no forwardable content (no text, no attachments), skipping.", email_id)
                 mailbox.flag(msg.uid, MailMessageFlags.SEEN, True)
                 continue
 
@@ -181,6 +228,8 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
                 in_reply_to=in_reply_to,
                 references=references,
                 parent_discord_message_id=parent_discord_message_id,
+                attachments=images,
+                attachment_notes=attachment_notes,
             )
 
             delivered = on_valid_email(incoming)

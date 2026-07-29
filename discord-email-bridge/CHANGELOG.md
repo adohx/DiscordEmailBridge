@@ -17,6 +17,12 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   dedicated system user, copies the project into `/opt`, installs and
   enables the service). `discord-email-bridge.service` also gained
   sandboxing directives (`ProtectSystem=strict`, `NoNewPrivileges`, etc).
+- Email → Discord image attachments: image attachments under 8 MB are now
+  forwarded as Discord files (an email can be attachment-only, with no text
+  body, and still get through). Non-image or oversized attachments are
+  dropped with a visible `⚠️` notice in the Discord message instead of
+  disappearing silently; if the image upload itself fails, the message is
+  retried without it and a notice is added.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make

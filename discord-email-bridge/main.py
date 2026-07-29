@@ -235,6 +235,8 @@ async def handle_incoming_email(
         incoming.body,
         reply_to_discord_message_id=incoming.parent_discord_message_id,
         parent_deleted=parent_deleted,
+        attachments=incoming.attachments,
+        attachment_notes=incoming.attachment_notes,
     )
     if discord_message is None:
         return False

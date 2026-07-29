@@ -27,8 +27,8 @@ Plain-text messages only
 ```
 
 Not supported (yet): multiple channels/servers/users, Discord Threads, exact
-email-thread mapping, attachment forwarding, full HTML rendering, a web admin
-panel, OAuth, rich-text messages. See the
+email-thread mapping, non-image attachment forwarding, full HTML rendering,
+a web admin panel, OAuth, rich-text messages. See the
 [CHANGELOG](discord-email-bridge/CHANGELOG.md) for what's actually planned
 next.
 
@@ -61,7 +61,9 @@ the Discord channel, and from the Discord channel back into the mailbox.
 - **Discord reply → Email**: native Discord replies show up in the email as a
   quote of the original message plus the new reply.
 - **Email → Discord**: replying to the bridge mailbox posts the message into
-  the Discord channel.
+  the Discord channel. Image attachments (under 8 MB) are forwarded as
+  Discord files; unsupported or oversized attachments are dropped with a
+  visible notice instead of silently disappearing.
 - **Email reply → Discord reply**: replying to a bridged email posts a real
   Discord reply to the original message, not just a plain message.
 - **Edit / delete notifications**: editing or deleting a bridged Discord
