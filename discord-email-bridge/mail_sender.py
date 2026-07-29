@@ -25,8 +25,19 @@ def build_message_id(config: Config, discord_message_id: str, bridge_id: str) ->
     return f"<discord-{discord_message_id}-{bridge_id_short}@{config.email_message_id_domain}>"
 
 
+def _sanitize_for_header(text: str) -> str:
+    """Strip CR/LF from text before it's interpolated into a Subject header.
+
+    Discord display names can't normally contain newlines, but nothing
+    guarantees that -- and without this, a stray \\r or \\n would make
+    EmailMessage's header policy raise ValueError, silently dropping the
+    whole message instead of just the offending character.
+    """
+    return text.replace("\r", "").replace("\n", " ")
+
+
 def _build_subject(author_name: str, content: str) -> str:
-    prefix = f"{SUBJECT_PREFIX}{author_name}: "
+    prefix = f"{SUBJECT_PREFIX}{_sanitize_for_header(author_name)}: "
     available = SUBJECT_MAX_LENGTH - len(prefix)
     if available <= 0:
         # Prefix alone already exceeds the budget; just truncate the whole thing.
@@ -66,7 +77,7 @@ def send_discord_message_as_email(
     references: Optional[Sequence[str]] = None,
     reply_context: Optional[Tuple[str, str]] = None,
 ) -> None:
-    """Send a single Discord message to TARGET_EMAIL over SMTP.
+    """Send a single Discord message to all TARGET_EMAILS recipients over SMTP.
 
     Raises smtplib.SMTPException / OSError on failure; caller is responsible
     for catching and logging so one failed email doesn't crash the program,
@@ -75,7 +86,7 @@ def send_discord_message_as_email(
     message = EmailMessage()
     message["Subject"] = _build_subject(author_name, content)
     message["From"] = config.smtp_from
-    message["To"] = config.target_email
+    message["To"] = ", ".join(config.target_emails)
     message["Message-ID"] = normalize_message_id(email_message_id)
     message["X-Discord-Bridge-ID"] = bridge_id
     message["X-Discord-Message-ID"] = discord_message_id
@@ -106,7 +117,7 @@ def _send(config: Config, message: EmailMessage) -> None:
 
     logger.info(
         "Sent email to %s (subject: %s, message-id: %s)",
-        config.target_email,
+        ", ".join(config.target_emails),
         message["Subject"],
         message["Message-ID"],
     )
@@ -133,9 +144,9 @@ def send_edit_notification(
     original_email_message_id = normalize_message_id(original_email_message_id)
 
     message = EmailMessage()
-    message["Subject"] = f"[Updated] Discord message from {author_name}"
+    message["Subject"] = f"[Updated] Discord message from {_sanitize_for_header(author_name)}"
     message["From"] = config.smtp_from
-    message["To"] = config.target_email
+    message["To"] = ", ".join(config.target_emails)
     message["Message-ID"] = email_message_id
     message["In-Reply-To"] = original_email_message_id
     message["References"] = original_email_message_id
@@ -169,9 +180,9 @@ def send_delete_notification(
     original_email_message_id = normalize_message_id(original_email_message_id)
 
     message = EmailMessage()
-    message["Subject"] = f"[Deleted] Discord message from {author_name}"
+    message["Subject"] = f"[Deleted] Discord message from {_sanitize_for_header(author_name)}"
     message["From"] = config.smtp_from
-    message["To"] = config.target_email
+    message["To"] = ", ".join(config.target_emails)
     message["Message-ID"] = email_message_id
     message["In-Reply-To"] = original_email_message_id
     message["References"] = original_email_message_id

@@ -7,6 +7,22 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
 
 ## [Unreleased]
 
+### Added
+- Multiple email recipients: `TARGET_EMAILS` replaces `TARGET_EMAIL` and
+  accepts a comma-separated list, so a Discord message (and its edit/delete
+  notifications) can be broadcast to more than one mailbox.
+  `ALLOWED_EMAIL_SENDER` is unchanged — replies are still accepted from only
+  one address.
+- `deploy.sh`: one-shot installer for the systemd deployment (creates the
+  dedicated system user, copies the project into `/opt`, installs and
+  enables the service). `discord-email-bridge.service` also gained
+  sandboxing directives (`ProtectSystem=strict`, `NoNewPrivileges`, etc).
+
+### Fixed
+- A Discord display name containing a stray CR/LF character would make
+  `EmailMessage` reject the Subject header and silently drop the whole
+  message; author names are now sanitized before being placed in a header.
+
 ### Planned — 0.2
 - Docker-based deployment (Dockerfile / docker-compose), so the bridge can be
   started without a manual Python/uv setup.

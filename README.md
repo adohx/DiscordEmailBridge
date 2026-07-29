@@ -1,12 +1,12 @@
 # Discord Email Bridge
 
-A minimal, single-user Discord ↔ Email bidirectional bridge. It lets a project
-member who can't use Discord — for example, someone who relies on a screen
-reader and prefers email over learning Discord's UI — participate in the
-discussion of one fixed Discord channel via email.
+A minimal Discord ↔ Email bidirectional bridge. It lets project members who
+can't use Discord — for example, someone who relies on a screen reader and
+prefers email over learning Discord's UI — participate in the discussion of
+one fixed Discord channel via email.
 
-This is an **MVP**, built for one Discord channel, one bridge mailbox, and one
-email user — not a general-purpose, multi-tenant product.
+Built for one Discord channel and one bridge mailbox — not a
+general-purpose, multi-tenant product.
 
 ## Scope
 
@@ -21,7 +21,7 @@ It's intentionally narrow in scope:
 ```text
 One Discord channel
 One bridge email account
-One target email user
+One or more target email recipients (comma-separated)
 One allowed reply email address
 Plain-text messages only
 ```

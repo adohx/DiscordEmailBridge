@@ -16,5 +16,14 @@ User=discordbridge
 # `uv run` will create/reuse .venv under WorkingDirectory and install deps
 # from pyproject.toml / uv.lock automatically on first start.
 
+# Hardening: the process only needs to read its own code/.env and write
+# state.json inside WorkingDirectory, so it doesn't need broader filesystem
+# access. Adjust ReadWritePaths if you point STATE_FILE elsewhere.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/discord-email-bridge
+
 [Install]
 WantedBy=multi-user.target

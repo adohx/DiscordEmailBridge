@@ -99,7 +99,9 @@ async def handle_discord_message(config: Config, state: State, message: discord.
         )
     except Exception:
         logger.exception(
-            "SMTP error while sending Discord message %s to %s.", discord_message_id, config.target_email
+            "SMTP error while sending Discord message %s to %s.",
+            discord_message_id,
+            ", ".join(config.target_emails),
         )
         return
 

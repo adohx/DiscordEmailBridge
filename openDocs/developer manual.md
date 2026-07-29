@@ -63,14 +63,14 @@ Fill in `.env` field by field (field definitions are in `config.py`):
 |          `SMTP_FROM`            |   Yes    | Sender address, usually the same as `SMTP_USER`             |
 |   `IMAP_HOST` / `IMAP_PORT`     |   Yes    | Gmail: `imap.gmail.com` / `993`                             |
 | `IMAP_USER` / `IMAP_PASSWORD`   |   Yes    | Same as SMTP, using the same app password                   |
-|         `TARGET_EMAIL`          |   Yes    | Target mailbox that receives Discord messages               |
+|         `TARGET_EMAILS`         |   Yes    | Comma-separated list of mailboxes that receive Discord messages (one is fine) |
 |    `ALLOWED_EMAIL_SENDER`       |   Yes    | The only email address allowed to reply and be forwarded back to Discord |
 | `EMAIL_POLL_INTERVAL_SECONDS`   |   Yes    | Mailbox polling interval in seconds, `60` recommended        |
 |         `STATE_FILE`            |   No     | Path to the state file, defaults to `state.json`             |
 |   `EMAIL_MESSAGE_ID_DOMAIN`     |   No     | Domain used to build email Message-IDs, defaults to `bridge.local`; doesn't need to be a real domain |
 |   `INCLUDE_DELETED_CONTENT`     |   No     | Whether delete-notification emails include the original content, defaults to `true` |
 
-In the simplest case, `TARGET_EMAIL` and `ALLOWED_EMAIL_SENDER` are the same person's mailbox.
+In the simplest case, `TARGET_EMAILS` has one address and it's the same person's mailbox as `ALLOWED_EMAIL_SENDER`. `TARGET_EMAILS` accepts multiple comma-separated recipients (e.g. `TARGET_EMAILS=alice@example.com,bob@example.com`) — every recipient gets every Discord message, edit and delete notification. `ALLOWED_EMAIL_SENDER` still accepts only one sender for replies; anyone else's reply is ignored (see `mail_reader.poll_mailbox`).
 
 **`.env` must not be committed to Git** (already excluded via `.gitignore`).
 
@@ -100,7 +100,17 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage dependencies and th
 
    > ![image-20260714181846156](zh/assets/image-20260714181846156.png)
 
-For long-term running, systemd is recommended (Ubuntu scenario). The repo already includes a ready-made `discord-email-bridge.service` template — just update `WorkingDirectory` / `ExecStart` / `User` in it. See Section 10 of `README.md` for the detailed steps; not repeated here.
+For long-term running, systemd is recommended (Ubuntu scenario). The repo includes a ready-made `discord-email-bridge.service` template plus `deploy.sh`, which creates a dedicated `discordbridge` system user, copies the project into `/opt/discord-email-bridge`, and installs + enables the service:
+
+```bash
+sudo ./deploy.sh
+# then edit /opt/discord-email-bridge/.env with real credentials
+sudo systemctl start discord-email-bridge
+sudo systemctl status discord-email-bridge
+journalctl -u discord-email-bridge -f
+```
+
+Override `APP_USER` / `APP_DIR` as environment variables if you want different values than the defaults baked into the script. If you deploy by hand instead, just update `WorkingDirectory` / `ExecStart` / `User` in `discord-email-bridge.service` and install it yourself with `systemctl enable --now`.
 
 # 2. Architecture
 

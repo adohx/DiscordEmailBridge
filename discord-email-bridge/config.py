@@ -3,7 +3,7 @@
 import logging
 import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -31,7 +31,7 @@ class Config:
     imap_user: str
     imap_password: str
 
-    target_email: str
+    target_emails: List[str]
     allowed_email_sender: str
 
     email_poll_interval_seconds: int
@@ -73,6 +73,14 @@ def _bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _require_email_list(name: str) -> List[str]:
+    raw = _require(name)
+    emails = [part.strip() for part in raw.split(",") if part.strip()]
+    if not emails:
+        raise ConfigError(f"Environment variable {name} must contain at least one email address")
+    return emails
+
+
 def load_config() -> Config:
     """Load configuration from .env / environment variables.
 
@@ -93,7 +101,7 @@ def load_config() -> Config:
         imap_port=_require_int("IMAP_PORT"),
         imap_user=_require("IMAP_USER"),
         imap_password=_require("IMAP_PASSWORD"),
-        target_email=_require("TARGET_EMAIL"),
+        target_emails=_require_email_list("TARGET_EMAILS"),
         allowed_email_sender=_require("ALLOWED_EMAIL_SENDER"),
         email_poll_interval_seconds=_require_int("EMAIL_POLL_INTERVAL_SECONDS"),
         state_file=os.getenv("STATE_FILE", "state.json"),
