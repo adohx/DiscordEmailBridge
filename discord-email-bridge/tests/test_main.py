@@ -221,6 +221,67 @@ class TestHandleMessageDelete:
         assert state.is_deleted("1") is True
 
 
+class TestHandleReactionAdd:
+    async def _seed_mapping(self, state, **overrides):
+        mapping = {
+            "bridge_id": "b1",
+            "discord_message_id": "1",
+            "author_name": "user@example.com",
+            "content": "my message",
+            "email_message_id": "<msg1@bridge.local>",
+            "origin": "email",
+        }
+        mapping.update(overrides)
+        state.add_mapping(mapping)
+
+    async def test_ignores_unmapped_message(self, config, state):
+        with patch("mail_sender.send_reaction_notification") as send_mock:
+            await main.handle_reaction_add(config, state, "999", "👍", "Bob")
+        send_mock.assert_not_called()
+
+    async def test_ignores_reaction_on_discord_originated_message(self, config, state):
+        await self._seed_mapping(state, origin="discord", author_name="Bob")
+
+        with patch("mail_sender.send_reaction_notification") as send_mock:
+            await main.handle_reaction_add(config, state, "1", "👍", "Carol")
+
+        send_mock.assert_not_called()
+
+    async def test_ignores_reaction_on_deleted_message(self, config, state):
+        await self._seed_mapping(state, status="deleted")
+
+        with patch("mail_sender.send_reaction_notification") as send_mock:
+            await main.handle_reaction_add(config, state, "1", "👍", "Bob")
+
+        send_mock.assert_not_called()
+
+    async def test_missing_email_message_id_skips_send(self, config, state):
+        await self._seed_mapping(state, email_message_id=None)
+
+        with patch("mail_sender.send_reaction_notification") as send_mock:
+            await main.handle_reaction_add(config, state, "1", "👍", "Bob")
+
+        send_mock.assert_not_called()
+
+    async def test_sends_notification_for_reaction_on_email_originated_message(self, config, state):
+        await self._seed_mapping(state)
+
+        with patch("mail_sender.send_reaction_notification") as send_mock:
+            await main.handle_reaction_add(config, state, "1", "👍", "Bob")
+
+        send_mock.assert_called_once()
+        args, _ = send_mock.call_args
+        assert args[1] == "Bob"
+        assert args[2] == "👍"
+        assert args[3] == "my message"
+
+    async def test_smtp_failure_is_logged_and_swallowed(self, config, state):
+        await self._seed_mapping(state)
+
+        with patch("mail_sender.send_reaction_notification", side_effect=OSError("smtp down")):
+            await main.handle_reaction_add(config, state, "1", "👍", "Bob")  # should not raise
+
+
 class TestHandleIncomingEmail:
     def make_incoming(self, **overrides):
         defaults = dict(

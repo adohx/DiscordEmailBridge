@@ -197,3 +197,39 @@ def send_delete_notification(
 
     _send(config, message)
     return email_message_id
+
+
+def send_reaction_notification(
+    config: Config,
+    reactor_name: str,
+    emoji: str,
+    original_content: str,
+    original_email_message_id: str,
+    discord_message_id: str,
+) -> str:
+    """Send a [Reaction] notification for a reaction added to a message the
+    email user sent (i.e. mapping["origin"] == "email" -- see main.handle_reaction_add).
+
+    Returns the new notification email's Message-ID. Raises
+    smtplib.SMTPException / OSError on failure; caller must not update state
+    until this call succeeds.
+    """
+    email_message_id = f"<reaction-{discord_message_id}-{uuid.uuid4().hex[:8]}@{config.email_message_id_domain}>"
+    original_email_message_id = normalize_message_id(original_email_message_id)
+
+    message = EmailMessage()
+    message["Subject"] = f"[Reaction] {_sanitize_for_header(reactor_name)} reacted {emoji}"
+    message["From"] = config.smtp_from
+    message["To"] = ", ".join(config.target_emails)
+    message["Message-ID"] = email_message_id
+    message["In-Reply-To"] = original_email_message_id
+    message["References"] = original_email_message_id
+    message["X-Discord-Bridge-Event"] = "reacted"
+    message["X-Discord-Message-ID"] = discord_message_id
+
+    message.set_content(
+        f"{reactor_name} reacted {emoji} to your message on Discord:\n\n{original_content}"
+    )
+
+    _send(config, message)
+    return email_message_id

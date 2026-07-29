@@ -116,6 +116,7 @@ async def handle_discord_message(config: Config, state: State, message: discord.
             "author_name": author_name,
             "content": content,
             "delivery_status": "sent",
+            "origin": "discord",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -222,6 +223,59 @@ async def handle_message_delete(config: Config, state: State, discord_message_id
     logger.info("Sent delete notification for Discord message %s.", discord_message_id)
 
 
+async def handle_reaction_add(
+    config: Config, state: State, discord_message_id: str, emoji: str, reactor_name: str
+) -> None:
+    """Send a [Reaction] notification email when someone reacts to a message
+    the email user originally sent via email.
+
+    Reactions on Discord-native messages (mapping["origin"] == "discord"),
+    and reaction removals, are intentionally not forwarded -- only feedback
+    on the email user's own messages is, so an active channel's ambient
+    reactions don't flood their inbox.
+    """
+    mapping = state.get_by_discord_message_id(discord_message_id)
+    if not mapping:
+        logger.info("Ignoring reaction on unmapped Discord message %s.", discord_message_id)
+        return
+
+    if mapping.get("origin") != "email":
+        logger.info("Ignoring reaction on Discord-originated message %s.", discord_message_id)
+        return
+
+    if mapping.get("status") == "deleted":
+        logger.info("Ignoring reaction on deleted Discord message %s.", discord_message_id)
+        return
+
+    original_email_message_id = mapping.get("email_message_id")
+    if not original_email_message_id:
+        logger.error(
+            "Discord message %s has no original email Message-ID; cannot send reaction notification.",
+            discord_message_id,
+        )
+        return
+
+    try:
+        await asyncio.to_thread(
+            mail_sender.send_reaction_notification,
+            config,
+            reactor_name,
+            emoji,
+            mapping.get("content") or "",
+            original_email_message_id,
+            discord_message_id,
+        )
+    except Exception:
+        logger.exception(
+            "SMTP error while sending reaction notification for Discord message %s.", discord_message_id
+        )
+        return
+
+    logger.info(
+        "Sent reaction notification (%s from %s) for Discord message %s.", emoji, reactor_name, discord_message_id
+    )
+
+
 async def handle_incoming_email(
     client: BridgeClient, config: Config, state: State, incoming: IncomingEmail
 ) -> bool:
@@ -253,6 +307,7 @@ async def handle_incoming_email(
             "author_name": incoming.sender,
             "content": incoming.body,
             "delivery_status": "sent",
+            "origin": "email",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -307,7 +362,16 @@ async def main() -> None:
     async def on_discord_message_delete(discord_message_id: str) -> None:
         await handle_message_delete(config, state, discord_message_id)
 
-    client = BridgeClient(config, on_discord_message, on_discord_message_edit, on_discord_message_delete)
+    async def on_discord_reaction_add(discord_message_id: str, emoji: str, reactor_name: str) -> None:
+        await handle_reaction_add(config, state, discord_message_id, emoji, reactor_name)
+
+    client = BridgeClient(
+        config,
+        on_discord_message,
+        on_discord_message_edit,
+        on_discord_message_delete,
+        on_discord_reaction_add,
+    )
 
     try:
         await asyncio.gather(

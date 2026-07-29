@@ -150,9 +150,9 @@ Discord Email Bridge is a single-process Python program (`discord-email-bridge/`
 |       Module        | Responsibility                                                                                                                                                    |
 | :------------------: | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 |    `config.py`       | Configuration layer. Reads all config values from `.env`/environment variables into an immutable `Config` dataclass; raises `ConfigError` and refuses to start if a required value is missing. |
-| `discord_client.py`  | Discord side. `BridgeClient` (a `discord.Client` subclass) listens for `on_message` / `on_raw_message_edit` / `on_raw_message_delete`, filters by guild/channel/bot before calling back into `main.py`; `deliver_email_to_channel` delivers email content into the channel (preferring a real Discord reply), and handles length truncation and mention cleanup. |
-|  `mail_reader.py`    | Email reading side (IMAP). `poll_mailbox` connects to the mailbox, fetches unread messages, filters by sender allowlist and dedup, extracts plain-text body and strips quoted history, parses `In-Reply-To`/`References`/`X-Discord-Bridge-ID` to determine reply relationships, and hands off to `main.py` via callback. |
-|  `mail_sender.py`    | Email sending side (SMTP). Wraps Discord messages as email (new message / `[Updated]` / `[Deleted]`), generates the `Message-ID` and threading headers, and sends via SMTP. |
+| `discord_client.py`  | Discord side. `BridgeClient` (a `discord.Client` subclass) listens for `on_message` / `on_raw_message_edit` / `on_raw_message_delete` / `on_raw_reaction_add`, filters by guild/channel/bot before calling back into `main.py`; `deliver_email_to_channel` delivers email content into the channel (preferring a real Discord reply), and handles length truncation and mention cleanup. Reactions need no extra Discord permission -- `guild_reactions` is a non-privileged intent already included in `Intents.default()`. |
+|  `mail_reader.py`    | Email reading side (IMAP). `poll_mailbox` connects to the mailbox, fetches unread messages, filters by sender allowlist (`allowed_email_senders`) and dedup, extracts plain-text body and strips quoted history, parses `In-Reply-To`/`References`/`X-Discord-Bridge-ID` to determine reply relationships, and hands off to `main.py` via callback. |
+|  `mail_sender.py`    | Email sending side (SMTP). Wraps Discord messages as email (new message / `[Updated]` / `[Deleted]` / `[Reaction]`), generates the `Message-ID` and threading headers, and sends via SMTP. |
 |     `state.py`       | State persistence. Maintains the "processed email ID" dedup set and the `discord_message_id ↔ email_message_id` mapping table (including edit version and delete status), writes `state.json` atomically, and auto-backs-up/rebuilds on corruption. |
 |     `main.py`        | Entry point + business orchestration layer. Doesn't touch network protocols directly — only calls into the modules above: handling new Discord messages/edits/deletes, handling email polling results, starting the Discord client and the email polling loop. |
 
@@ -185,7 +185,17 @@ discord_client.on_raw_message_edit / on_raw_message_delete
         → state.record_edit / record_delete
 ```
 
-`state.json` is the only persisted state across this whole pipeline, holding the bidirectional mapping between Discord message IDs and email Message-IDs. Both "an email reply becomes a real Discord reply" and "an edit/delete notification can find the original email" are built on top of this mapping — see 3.1 for the exact determination rules.
+**Reaction → Email**
+
+```text
+discord_client.on_raw_reaction_add
+    → main.handle_reaction_add
+        → mail_sender.send_reaction_notification (SMTP)
+```
+
+Deliberately narrow: only reactions on messages with `mapping["origin"] == "email"` (i.e. the email user's own messages, set at `add_mapping` time in `handle_incoming_email`) trigger a notification. Reactions on Discord-native messages, and reaction removals, are ignored -- otherwise an active channel's ambient reactions would flood the email user's inbox, working against the whole point of the bridge. No state is written afterward (unlike edit/delete), since a reaction notification doesn't change anything about the persisted mapping.
+
+`state.json` is the only persisted state across this whole pipeline, holding the bidirectional mapping between Discord message IDs and email Message-IDs. Both "an email reply becomes a real Discord reply" and "an edit/delete/reaction notification can find the original email" are built on top of this mapping — see 3.1 for the exact determination rules.
 
 ## 2.3 Concurrency Model
 

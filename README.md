@@ -68,6 +68,9 @@ the Discord channel, and from the Discord channel back into the mailbox.
   Discord reply to the original message, not just a plain message.
 - **Edit / delete notifications**: editing or deleting a bridged Discord
   message sends an `[Updated]` / `[Deleted]` follow-up email.
+- **Reaction notifications**: reacting to a Discord message the email user
+  sent via email sends a `[Reaction]` follow-up email. Scoped to their own
+  messages only, so an active channel's reactions don't flood their inbox.
 - **Security by default**: only an explicit allowlist of reply senders, no
   admin bot permissions, `@everyone`/`@here` mentions are sanitized, and
   duplicate messages/emails are never re-processed.

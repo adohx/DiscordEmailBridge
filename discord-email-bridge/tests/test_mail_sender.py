@@ -165,3 +165,48 @@ class TestSendDeleteNotification:
 
         body = fake_smtp.send_message.call_args[0][0].get_content()
         assert "was deleted." in body
+
+
+class TestSendReactionNotification:
+    def test_sets_subject_and_references_original(self):
+        config = make_config()
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+
+        with patch("smtplib.SMTP", return_value=fake_smtp):
+            new_id = mail_sender.send_reaction_notification(
+                config, "Bob", "👍", "my original message", "<original@bridge.local>", "d1"
+            )
+
+        sent_message = fake_smtp.send_message.call_args[0][0]
+        assert sent_message["Subject"] == "[Reaction] Bob reacted 👍"
+        assert sent_message["In-Reply-To"] == "<original@bridge.local>"
+        assert new_id != "<original@bridge.local>"
+
+    def test_body_includes_reactor_and_original_content(self):
+        config = make_config()
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+
+        with patch("smtplib.SMTP", return_value=fake_smtp):
+            mail_sender.send_reaction_notification(
+                config, "Bob", "👍", "my original message", "<original@bridge.local>", "d1"
+            )
+
+        body = fake_smtp.send_message.call_args[0][0].get_content()
+        assert "Bob reacted 👍" in body
+        assert "my original message" in body
+
+    def test_sanitizes_reactor_name_with_newline(self):
+        config = make_config()
+        fake_smtp = MagicMock()
+        fake_smtp.__enter__.return_value = fake_smtp
+
+        with patch("smtplib.SMTP", return_value=fake_smtp):
+            mail_sender.send_reaction_notification(
+                config, "Evil\r\nBcc: x@y.com", "👍", "content", "<original@bridge.local>", "d1"
+            )
+
+        subject = fake_smtp.send_message.call_args[0][0]["Subject"]
+        assert "\r" not in subject
+        assert "\n" not in subject

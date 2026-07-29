@@ -35,6 +35,14 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   explicitly rather than parsed from the email, since a `From` display name
   isn't trustworthy input. A length mismatch between the two lists fails
   config loading immediately instead of silently misattributing a reply.
+- Discord reaction → email notifications: reacting to a Discord message that
+  the email user originally sent via email now sends a `[Reaction]`
+  follow-up email (threaded onto the original via `In-Reply-To`), so they
+  get feedback on their own messages without leaving email. Scoped
+  deliberately narrow to avoid flooding their inbox: reactions on
+  Discord-native messages are not forwarded, and neither are reaction
+  removals. No new Discord permission is needed -- `guild_reactions` is a
+  non-privileged intent already included in `Intents.default()`.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make

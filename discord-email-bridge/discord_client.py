@@ -34,6 +34,12 @@ OnDiscordMessageEdit = Callable[[discord.Message], Awaitable[None]]
 # for author/content -- see discord-message-edit-delete-sync.md #9.
 OnDiscordMessageDelete = Callable[[str], Awaitable[None]]
 
+# Called with (discord_message_id, emoji_display, reactor_name) whenever a
+# reaction is added to a message in the bridged channel (guild/channel
+# already checked, reactor isn't a bot). The callback decides whether this
+# message is one the email user cares about (see main.handle_reaction_add).
+OnDiscordReactionAdd = Callable[[str, str, str], Awaitable[None]]
+
 
 def clean_discord_mentions(text: str) -> str:
     """Neutralize @everyone / @here so forwarded email content can't ping the server."""
@@ -98,6 +104,7 @@ class BridgeClient(discord.Client):
         on_discord_message: OnDiscordMessage,
         on_discord_message_edit: Optional[OnDiscordMessageEdit] = None,
         on_discord_message_delete: Optional[OnDiscordMessageDelete] = None,
+        on_discord_reaction_add: Optional[OnDiscordReactionAdd] = None,
     ):
         intents = discord.Intents.default()
         intents.message_content = True
@@ -106,6 +113,7 @@ class BridgeClient(discord.Client):
         self.on_discord_message = on_discord_message
         self.on_discord_message_edit = on_discord_message_edit
         self.on_discord_message_delete = on_discord_message_delete
+        self.on_discord_reaction_add = on_discord_reaction_add
 
     async def on_ready(self):
         logger.info("Discord bot connected as %s", self.user)
@@ -183,6 +191,23 @@ class BridgeClient(discord.Client):
             await self.on_discord_message_delete(str(payload.message_id))
         except Exception:
             logger.exception("Error while handling deleted Discord message %s.", payload.message_id)
+
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
+        if self.on_discord_reaction_add is None:
+            return
+
+        if not self._is_bridged_channel(payload.guild_id, payload.channel_id):
+            return
+
+        if payload.member is not None and payload.member.bot:
+            return
+
+        reactor_name = payload.member.display_name if payload.member is not None else str(payload.user_id)
+
+        try:
+            await self.on_discord_reaction_add(str(payload.message_id), str(payload.emoji), reactor_name)
+        except Exception:
+            logger.exception("Error while handling reaction on Discord message %s.", payload.message_id)
 
 
 async def deliver_email_to_channel(

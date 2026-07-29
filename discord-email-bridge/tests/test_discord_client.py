@@ -1,7 +1,10 @@
+from types import SimpleNamespace
+
 import discord
 import pytest
 
 import discord_client as dc
+from conftest import make_config
 from mail_reader import EmailAttachment
 
 
@@ -209,3 +212,110 @@ class TestDeliverEmailToChannel:
 
         assert message is None
         assert was_reply is False
+
+
+def make_reaction_payload(guild_id=999, channel_id=111, member=None, user_id=42, message_id=1, emoji="👍"):
+    return SimpleNamespace(
+        guild_id=guild_id,
+        channel_id=channel_id,
+        member=member,
+        user_id=user_id,
+        message_id=message_id,
+        emoji=emoji,
+    )
+
+
+class TestBridgeClientOnRawReactionAdd:
+    def make_client(self, on_discord_reaction_add=None, discord_guild_id=999):
+        config = make_config(discord_channel_id=111, discord_guild_id=discord_guild_id)
+
+        async def on_message(message):
+            pass
+
+        return dc.BridgeClient(config, on_message, on_discord_reaction_add=on_discord_reaction_add)
+
+    async def test_calls_back_with_message_id_emoji_and_reactor_name(self):
+        calls = []
+
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            calls.append((discord_message_id, emoji, reactor_name))
+
+        client = self.make_client(on_reaction_add)
+        member = SimpleNamespace(bot=False, display_name="Bob")
+        payload = make_reaction_payload(member=member)
+
+        await client.on_raw_reaction_add(payload)
+
+        assert calls == [("1", "👍", "Bob")]
+
+    async def test_ignores_reaction_from_bot(self):
+        calls = []
+
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            calls.append((discord_message_id, emoji, reactor_name))
+
+        client = self.make_client(on_reaction_add)
+        member = SimpleNamespace(bot=True, display_name="SomeBot")
+        payload = make_reaction_payload(member=member)
+
+        await client.on_raw_reaction_add(payload)
+
+        assert calls == []
+
+    async def test_ignores_reaction_outside_bridged_channel(self):
+        calls = []
+
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            calls.append((discord_message_id, emoji, reactor_name))
+
+        client = self.make_client(on_reaction_add)
+        member = SimpleNamespace(bot=False, display_name="Bob")
+        payload = make_reaction_payload(member=member, channel_id=999999)
+
+        await client.on_raw_reaction_add(payload)
+
+        assert calls == []
+
+    async def test_ignores_reaction_outside_bridged_guild(self):
+        calls = []
+
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            calls.append((discord_message_id, emoji, reactor_name))
+
+        client = self.make_client(on_reaction_add, discord_guild_id=999)
+        member = SimpleNamespace(bot=False, display_name="Bob")
+        payload = make_reaction_payload(member=member, guild_id=111111)
+
+        await client.on_raw_reaction_add(payload)
+
+        assert calls == []
+
+    async def test_noop_when_no_callback_registered(self):
+        client = self.make_client(on_discord_reaction_add=None)
+        member = SimpleNamespace(bot=False, display_name="Bob")
+        payload = make_reaction_payload(member=member)
+
+        await client.on_raw_reaction_add(payload)  # should not raise
+
+    async def test_falls_back_to_user_id_when_member_unavailable(self):
+        calls = []
+
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            calls.append((discord_message_id, emoji, reactor_name))
+
+        client = self.make_client(on_reaction_add)
+        payload = make_reaction_payload(member=None, user_id=42)
+
+        await client.on_raw_reaction_add(payload)
+
+        assert calls == [("1", "👍", "42")]
+
+    async def test_callback_exception_is_caught(self):
+        async def on_reaction_add(discord_message_id, emoji, reactor_name):
+            raise RuntimeError("boom")
+
+        client = self.make_client(on_reaction_add)
+        member = SimpleNamespace(bot=False, display_name="Bob")
+        payload = make_reaction_payload(member=member)
+
+        await client.on_raw_reaction_add(payload)  # should not raise
