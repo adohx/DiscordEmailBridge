@@ -63,7 +63,9 @@ the Discord channel, and from the Discord channel back into the mailbox.
 - **Email → Discord**: replying to the bridge mailbox posts the message into
   the Discord channel. Image, PDF, DOC, and DOCX attachments (under 8 MB)
   are forwarded as Discord files as-is; unsupported or oversized attachments
-  are dropped with a visible notice instead of silently disappearing.
+  are dropped with a visible notice instead of silently disappearing. If the
+  email body itself is too long for a single Discord message, it's never
+  truncated -- the full text is attached as `full_message.txt` instead.
 - **Email reply → Discord reply**: replying to a bridged email posts a real
   Discord reply to the original message, not just a plain message.
 - **Edit / delete notifications**: editing or deleting a bridged Discord

@@ -62,7 +62,7 @@ class TestStripQuotedHistory:
             "From: Someone <someone@example.com>\n"
             "Date: Mon, Jan 1, 2026 at 10:00 AM\n"
             "Subject: Project update\n"
-            "To: Jason <jason@example.com>\n"
+            "To: Alex <alex@example.com>\n"
             "\n"
             "Here is the actual forwarded content that must survive."
         )
@@ -94,6 +94,59 @@ class TestStripQuotedHistory:
             "old quoted stuff\n"
         )
         assert strip_quoted_history(text) == "---------- Forwarded message ---------\nreal content"
+
+    def test_stops_at_bold_markdown_header_marker(self):
+        # Outlook bolds "From:"/"Sent:"/"To:"/"Subject:" in its reply-quote
+        # header; when the HTML is converted to plain text (e.g. by Gmail),
+        # that bold styling survives as literal Markdown asterisks --
+        # "*From:*" -- which must still be recognized as a quote marker.
+        text = "my reply\n*From:* Jane <jane@example.com>\n*Subject:* hi\n\nold quoted body"
+        assert strip_quoted_history(text) == "my reply"
+
+    def test_nested_forward_with_bold_outlook_quote(self):
+        # Regression test for a real-world shape (all identifying details
+        # replaced with placeholders): a few stacked Gmail forward banners,
+        # then a genuinely-forwarded message that itself ends with an inline
+        # Outlook-style reply quote using bold "*From:*" headers. Only the
+        # truly new content (the innermost forwarded message body) should
+        # survive.
+        text = (
+            "---------- Forwarded message ---------\n"
+            "From: Person One <person-one@example.com>\n"
+            "Date: Wed, Jan 1, 2026 at 10:53 AM\n"
+            "Subject: Fwd: Meeting Recap\n"
+            "To: <bridge@example.com>\n"
+            "\n"
+            "\n"
+            "---------- Forwarded message ---------\n"
+            "From: Person Two <person-two@example.org>\n"
+            "Date: Mon, Dec 22, 2025 at 2:00 PM\n"
+            "Subject: RE: Meeting Recap\n"
+            "To: Person Three <person-three@example.net>\n"
+            "\n"
+            "\n"
+            "Hi Person Three,\n"
+            "\n"
+            "Here are my notes.\n"
+            "\n"
+            "Person Two\n"
+            "\n"
+            "\n"
+            "*From:* Person Three <person-three@example.net>\n"
+            "*Sent:* Friday, December 12, 2025 3:35 PM\n"
+            "*To:* Person Two <person-two@example.org>\n"
+            "*Subject:* Meeting Recap\n"
+            "\n"
+            "Hi everyone,\n"
+            "\n"
+            "Thanks so much for your time.\n"
+        )
+        result = strip_quoted_history(text)
+        assert "Hi Person Three," in result
+        assert "Here are my notes." in result
+        assert result.endswith("Person Two")
+        assert "Hi everyone" not in result
+        assert "Person Three <person-three@example.net>" not in result
 
 
 class TestGetEmailId:

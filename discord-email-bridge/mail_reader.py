@@ -21,13 +21,19 @@ logger = logging.getLogger(__name__)
 # Lines that mark the start of quoted history in a reply. Once one of these
 # is seen, everything from that point on is dropped. Not meant to be
 # perfect -- just good enough to stop re-sending whole email chains.
+#
+# The header fields (From/Sent/To/Subject) tolerate up to 2 leading/trailing
+# '*' characters: Outlook bolds these labels, and when Gmail (or other
+# clients) render/convert that to plain text, the bold styling becomes
+# literal Markdown asterisks -- e.g. "*From:* Jane <jane@x.com>" -- which
+# would otherwise never match and let the whole quoted block through.
 _QUOTE_MARKERS = [
     re.compile(r"^\s*On .{0,150} wrote:\s*$", re.IGNORECASE),
     re.compile(r"^\s*-{2,}\s*Original Message\s*-{2,}\s*$", re.IGNORECASE),
-    re.compile(r"^\s*From:\s*.+$", re.IGNORECASE),
-    re.compile(r"^\s*Sent:\s*.+$", re.IGNORECASE),
-    re.compile(r"^\s*To:\s*.+$", re.IGNORECASE),
-    re.compile(r"^\s*Subject:\s*.+$", re.IGNORECASE),
+    re.compile(r"^\s*\*{0,2}From:\*{0,2}\s*.+$", re.IGNORECASE),
+    re.compile(r"^\s*\*{0,2}Sent:\*{0,2}\s*.+$", re.IGNORECASE),
+    re.compile(r"^\s*\*{0,2}To:\*{0,2}\s*.+$", re.IGNORECASE),
+    re.compile(r"^\s*\*{0,2}Subject:\*{0,2}\s*.+$", re.IGNORECASE),
 ]
 
 # Gmail's "forward" marker. Unlike the reply-quote markers above, what
@@ -36,7 +42,7 @@ _QUOTE_MARKERS = [
 # Only the header block directly under the marker (From/Date/Subject/To/Cc)
 # is skipped; the real forwarded body after it is kept.
 _FORWARD_MARKER = re.compile(r"^\s*-{2,}\s*Forwarded message\s*-{2,}\s*$", re.IGNORECASE)
-_FORWARD_HEADER_FIELD = re.compile(r"^\s*(From|Date|Sent|To|Cc|Subject):\s*.*$", re.IGNORECASE)
+_FORWARD_HEADER_FIELD = re.compile(r"^\s*\*{0,2}(From|Date|Sent|To|Cc|Subject):\*{0,2}\s*.*$", re.IGNORECASE)
 
 # Discord's default per-file upload limit is 10 MB on non-boosted servers;
 # stay comfortably under it.

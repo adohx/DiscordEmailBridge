@@ -12,7 +12,8 @@ from mail_reader import EmailAttachment
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 1800
-TRUNCATION_NOTICE = "\n\n[Message truncated]"
+FULL_TEXT_ATTACHMENT_NOTICE = "\n\n📎 Full message attached as a text file (too long for a single Discord message)."
+FULL_TEXT_ATTACHMENT_FILENAME = "full_message.txt"
 EMAIL_REPLY_PREFIX_TEMPLATE = "📧 Email reply from {name}:\n\n"
 EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE = "📧 Email reply from {name} to an unavailable message:\n\n"
 EMAIL_REPLY_DELETED_PREFIX_TEMPLATE = "📧 Email reply from {name} to a deleted Discord message:\n\n"
@@ -53,7 +54,11 @@ def format_email_reply_for_discord(
     unavailable: bool = False,
     deleted: bool = False,
     notes: Optional[Sequence[str]] = None,
-) -> str:
+) -> Tuple[str, Optional[bytes]]:
+    """Build the Discord message text, plus the full original text as UTF-8
+    bytes if it didn't fit and needs to go out as a .txt attachment instead
+    of being truncated -- see deliver_email_to_channel.
+    """
     if deleted:
         template = EMAIL_REPLY_DELETED_PREFIX_TEMPLATE
     elif unavailable:
@@ -63,21 +68,26 @@ def format_email_reply_for_discord(
     prefix = template.format(name=clean_discord_mentions(sender_name))
     cleaned = clean_discord_mentions(text)
 
+    overflow: Optional[bytes] = None
     body_budget = MAX_MESSAGE_LENGTH - len(prefix)
     if len(cleaned) > body_budget:
-        truncate_to = max(body_budget - len(TRUNCATION_NOTICE), 0)
-        cleaned = cleaned[:truncate_to] + TRUNCATION_NOTICE
+        overflow = cleaned.encode("utf-8")
+        preview_to = max(body_budget - len(FULL_TEXT_ATTACHMENT_NOTICE), 0)
+        cleaned = cleaned[:preview_to] + FULL_TEXT_ATTACHMENT_NOTICE
 
     formatted = prefix + cleaned
     if notes:
         separator = "\n\n" if cleaned else ""
         formatted += separator + "\n".join(f"⚠️ {note}" for note in notes)
-    return formatted
+    return formatted, overflow
 
 
-def _build_discord_files(attachments: Sequence[EmailAttachment]) -> List[discord.File]:
+def _build_discord_files(attachments: Sequence[EmailAttachment], overflow: Optional[bytes] = None) -> List[discord.File]:
     """Build fresh discord.File objects -- they're single-use and can't be resent."""
-    return [discord.File(io.BytesIO(att.payload), filename=att.filename) for att in attachments]
+    files = [discord.File(io.BytesIO(att.payload), filename=att.filename) for att in attachments]
+    if overflow is not None:
+        files.append(discord.File(io.BytesIO(overflow), filename=FULL_TEXT_ATTACHMENT_FILENAME))
+    return files
 
 
 async def _send_with_attachment_fallback(send, text: str, files: List[discord.File]) -> discord.Message:
@@ -240,6 +250,10 @@ async def deliver_email_to_channel(
     text so nothing is dropped silently. If uploading the files themselves
     fails, the message is retried without them and a notice is appended too.
 
+    If `text` doesn't fit in a single Discord message, it is NOT truncated --
+    the full original text is attached as `full_message.txt` instead (see
+    format_email_reply_for_discord), so long emails never lose content.
+
     Returns (sent_message, was_real_reply). sent_message is None on failure.
     """
     channel = client.get_channel(channel_id)
@@ -255,18 +269,22 @@ async def deliver_email_to_channel(
             "Discord message %s (parent of an email reply) was deleted; sending a normal channel message instead.",
             reply_to_discord_message_id,
         )
-        formatted = format_email_reply_for_discord(text, sender_name, deleted=True, notes=attachment_notes)
+        formatted, overflow = format_email_reply_for_discord(text, sender_name, deleted=True, notes=attachment_notes)
     elif reply_to_discord_message_id:
         try:
             original_message = await channel.fetch_message(int(reply_to_discord_message_id))
-            formatted = format_email_reply_for_discord(text, sender_name, unavailable=False, notes=attachment_notes)
+            formatted, overflow = format_email_reply_for_discord(
+                text, sender_name, unavailable=False, notes=attachment_notes
+            )
 
             async def _reply(content: str, files: Optional[List[discord.File]]) -> discord.Message:
                 return await original_message.reply(
                     content, files=files or None, allowed_mentions=discord.AllowedMentions.none()
                 )
 
-            sent = await _send_with_attachment_fallback(_reply, formatted, _build_discord_files(attachments or []))
+            sent = await _send_with_attachment_fallback(
+                _reply, formatted, _build_discord_files(attachments or [], overflow)
+            )
             return sent, True
         except (discord.DiscordException, ValueError) as exc:
             logger.warning(
@@ -274,15 +292,21 @@ async def deliver_email_to_channel(
                 reply_to_discord_message_id,
                 exc,
             )
-            formatted = format_email_reply_for_discord(text, sender_name, unavailable=True, notes=attachment_notes)
+            formatted, overflow = format_email_reply_for_discord(
+                text, sender_name, unavailable=True, notes=attachment_notes
+            )
     else:
-        formatted = format_email_reply_for_discord(text, sender_name, unavailable=False, notes=attachment_notes)
+        formatted, overflow = format_email_reply_for_discord(
+            text, sender_name, unavailable=False, notes=attachment_notes
+        )
 
     try:
         async def _channel_send(content: str, files: Optional[List[discord.File]]) -> discord.Message:
             return await channel.send(content, files=files or None, allowed_mentions=discord.AllowedMentions.none())
 
-        sent = await _send_with_attachment_fallback(_channel_send, formatted, _build_discord_files(attachments or []))
+        sent = await _send_with_attachment_fallback(
+            _channel_send, formatted, _build_discord_files(attachments or [], overflow)
+        )
         return sent, False
     except discord.DiscordException as exc:
         logger.error("Discord API error while sending message to channel %s: %s", channel_id, exc)

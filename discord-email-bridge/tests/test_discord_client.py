@@ -21,42 +21,48 @@ class TestCleanDiscordMentions:
 
 class TestFormatEmailReplyForDiscord:
     def test_default_prefix_includes_sender_name(self):
-        result = dc.format_email_reply_for_discord("hi", "Alice")
+        result, overflow = dc.format_email_reply_for_discord("hi", "Alice")
         assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "hi"
         assert "Alice" in result
+        assert overflow is None
 
     def test_unavailable_prefix(self):
-        result = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True)
+        result, _ = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True)
         assert result.startswith(dc.EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE.format(name="Alice"))
 
     def test_deleted_prefix_takes_priority(self):
-        result = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True, deleted=True)
+        result, _ = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True, deleted=True)
         assert result.startswith(dc.EMAIL_REPLY_DELETED_PREFIX_TEMPLATE.format(name="Alice"))
 
-    def test_truncates_long_content(self):
+    def test_long_content_is_not_truncated_but_returned_as_overflow(self):
         long_text = "x" * 3000
-        result = dc.format_email_reply_for_discord(long_text, "Alice")
+        result, overflow = dc.format_email_reply_for_discord(long_text, "Alice")
         assert len(result) <= dc.MAX_MESSAGE_LENGTH
-        assert result.endswith(dc.TRUNCATION_NOTICE.strip())
+        assert result.endswith(dc.FULL_TEXT_ATTACHMENT_NOTICE.strip())
+        assert overflow == long_text.encode("utf-8")
+
+    def test_short_content_has_no_overflow(self):
+        _, overflow = dc.format_email_reply_for_discord("hi", "Alice")
+        assert overflow is None
 
     def test_sanitizes_mentions_in_body(self):
-        result = dc.format_email_reply_for_discord("ping @everyone now", "Alice")
+        result, _ = dc.format_email_reply_for_discord("ping @everyone now", "Alice")
         assert "@everyone" not in result
 
     def test_sanitizes_mentions_in_sender_name(self):
-        result = dc.format_email_reply_for_discord("hi", "@everyone")
+        result, _ = dc.format_email_reply_for_discord("hi", "@everyone")
         assert "@everyone" not in result
 
     def test_appends_notes_with_blank_line_when_body_present(self):
-        result = dc.format_email_reply_for_discord("hi", "Alice", notes=["note one", "note two"])
+        result, _ = dc.format_email_reply_for_discord("hi", "Alice", notes=["note one", "note two"])
         assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "hi\n\n⚠️ note one\n⚠️ note two"
 
     def test_appends_notes_without_leading_blank_line_when_body_empty(self):
-        result = dc.format_email_reply_for_discord("", "Alice", notes=["note one"])
+        result, _ = dc.format_email_reply_for_discord("", "Alice", notes=["note one"])
         assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "⚠️ note one"
 
     def test_no_notes_block_when_notes_empty(self):
-        result = dc.format_email_reply_for_discord("hi", "Alice", notes=[])
+        result, _ = dc.format_email_reply_for_discord("hi", "Alice", notes=[])
         assert "⚠️" not in result
 
 
@@ -73,6 +79,17 @@ class TestBuildDiscordFiles:
 
     def test_empty_list_for_no_attachments(self):
         assert dc._build_discord_files([]) == []
+
+    def test_appends_overflow_file_when_given(self):
+        files = dc._build_discord_files([], overflow=b"full text content")
+        assert len(files) == 1
+        assert files[0].filename == dc.FULL_TEXT_ATTACHMENT_FILENAME
+
+    def test_overflow_file_combined_with_regular_attachments(self):
+        attachments = [EmailAttachment(filename="a.png", content_type="image/png", payload=b"111")]
+        files = dc._build_discord_files(attachments, overflow=b"full text content")
+        assert len(files) == 2
+        assert files[-1].filename == dc.FULL_TEXT_ATTACHMENT_FILENAME
 
 
 class FakeMessage:
@@ -137,6 +154,19 @@ class TestDeliverEmailToChannel:
         content, files = channel.sent[-1]
         assert message is not None
         assert files is not None and len(files) == 1
+
+    async def test_long_body_sent_as_full_text_attachment_instead_of_truncated(self):
+        channel = FakeChannel()
+        client = FakeClient(channel)
+        long_text = "x" * 3000
+
+        message, _ = await dc.deliver_email_to_channel(client, 1, long_text, "Alice")
+
+        content, files = channel.sent[-1]
+        assert message is not None
+        assert len(content) <= dc.MAX_MESSAGE_LENGTH
+        assert files is not None and len(files) == 1
+        assert files[0].filename == dc.FULL_TEXT_ATTACHMENT_FILENAME
 
     async def test_attachment_notes_appear_in_message_text(self):
         channel = FakeChannel()

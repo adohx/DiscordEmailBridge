@@ -47,6 +47,11 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   Discord-native messages are not forwarded, and neither are reaction
   removals. No new Discord permission is needed -- `guild_reactions` is a
   non-privileged intent already included in `Intents.default()`.
+- Long email bodies are no longer truncated: if the text doesn't fit in a
+  single Discord message, the full original text is attached as
+  `full_message.txt` instead of being cut off, so nothing is lost. Reuses
+  the same attachment-upload path (and its upload-failure fallback) as
+  regular email attachments.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make
@@ -59,6 +64,12 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   point on, including the actual content the sender meant to share. Now only
   the header block right under the forward marker is skipped; the real body
   after it is kept.
+- The `From:`/`Sent:`/`To:`/`Subject:` quote-marker patterns didn't match
+  when a mail client (e.g. Outlook) bolds those labels and the HTML-to-text
+  conversion renders that as literal Markdown asterisks (`*From:*`) --
+  causing an entire quoted reply block, including its content, to be kept
+  instead of stripped. The patterns now tolerate up to 2 leading/trailing
+  `*` characters around the label.
 
 ### Planned — 0.2
 - Docker-based deployment (Dockerfile / docker-compose), so the bridge can be
