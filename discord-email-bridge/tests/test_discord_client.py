@@ -17,38 +17,43 @@ class TestCleanDiscordMentions:
 
 
 class TestFormatEmailReplyForDiscord:
-    def test_default_prefix(self):
-        result = dc.format_email_reply_for_discord("hi")
-        assert result == dc.EMAIL_REPLY_PREFIX + "hi"
+    def test_default_prefix_includes_sender_name(self):
+        result = dc.format_email_reply_for_discord("hi", "Alice")
+        assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "hi"
+        assert "Alice" in result
 
     def test_unavailable_prefix(self):
-        result = dc.format_email_reply_for_discord("hi", unavailable=True)
-        assert result.startswith(dc.EMAIL_REPLY_UNAVAILABLE_PREFIX)
+        result = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True)
+        assert result.startswith(dc.EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE.format(name="Alice"))
 
     def test_deleted_prefix_takes_priority(self):
-        result = dc.format_email_reply_for_discord("hi", unavailable=True, deleted=True)
-        assert result.startswith(dc.EMAIL_REPLY_DELETED_PREFIX)
+        result = dc.format_email_reply_for_discord("hi", "Alice", unavailable=True, deleted=True)
+        assert result.startswith(dc.EMAIL_REPLY_DELETED_PREFIX_TEMPLATE.format(name="Alice"))
 
     def test_truncates_long_content(self):
         long_text = "x" * 3000
-        result = dc.format_email_reply_for_discord(long_text)
+        result = dc.format_email_reply_for_discord(long_text, "Alice")
         assert len(result) <= dc.MAX_MESSAGE_LENGTH
         assert result.endswith(dc.TRUNCATION_NOTICE.strip())
 
     def test_sanitizes_mentions_in_body(self):
-        result = dc.format_email_reply_for_discord("ping @everyone now")
+        result = dc.format_email_reply_for_discord("ping @everyone now", "Alice")
+        assert "@everyone" not in result
+
+    def test_sanitizes_mentions_in_sender_name(self):
+        result = dc.format_email_reply_for_discord("hi", "@everyone")
         assert "@everyone" not in result
 
     def test_appends_notes_with_blank_line_when_body_present(self):
-        result = dc.format_email_reply_for_discord("hi", notes=["note one", "note two"])
-        assert result == dc.EMAIL_REPLY_PREFIX + "hi\n\n⚠️ note one\n⚠️ note two"
+        result = dc.format_email_reply_for_discord("hi", "Alice", notes=["note one", "note two"])
+        assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "hi\n\n⚠️ note one\n⚠️ note two"
 
     def test_appends_notes_without_leading_blank_line_when_body_empty(self):
-        result = dc.format_email_reply_for_discord("", notes=["note one"])
-        assert result == dc.EMAIL_REPLY_PREFIX + "⚠️ note one"
+        result = dc.format_email_reply_for_discord("", "Alice", notes=["note one"])
+        assert result == dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "⚠️ note one"
 
     def test_no_notes_block_when_notes_empty(self):
-        result = dc.format_email_reply_for_discord("hi", notes=[])
+        result = dc.format_email_reply_for_discord("hi", "Alice", notes=[])
         assert "⚠️" not in result
 
 
@@ -113,18 +118,18 @@ class TestDeliverEmailToChannel:
         channel = FakeChannel()
         client = FakeClient(channel)
 
-        message, was_reply = await dc.deliver_email_to_channel(client, 1, "hello")
+        message, was_reply = await dc.deliver_email_to_channel(client, 1, "hello", "Alice")
 
         assert message is not None
         assert was_reply is False
-        assert channel.sent[-1] == (dc.EMAIL_REPLY_PREFIX + "hello", None)
+        assert channel.sent[-1] == (dc.EMAIL_REPLY_PREFIX_TEMPLATE.format(name="Alice") + "hello", None)
 
     async def test_sends_image_attachment_successfully(self):
         channel = FakeChannel()
         client = FakeClient(channel)
         attachments = [EmailAttachment("a.png", "image/png", b"123")]
 
-        message, _ = await dc.deliver_email_to_channel(client, 1, "look", attachments=attachments)
+        message, _ = await dc.deliver_email_to_channel(client, 1, "look", "Alice", attachments=attachments)
 
         content, files = channel.sent[-1]
         assert message is not None
@@ -135,7 +140,11 @@ class TestDeliverEmailToChannel:
         client = FakeClient(channel)
 
         await dc.deliver_email_to_channel(
-            client, 1, "hello", attachment_notes=["Attachment skipped: x.pdf (application/pdf) — unsupported format, only images are forwarded."]
+            client,
+            1,
+            "hello",
+            "Alice",
+            attachment_notes=["Attachment skipped: x.pdf (application/pdf) — unsupported format, only images are forwarded."],
         )
 
         content, _ = channel.sent[-1]
@@ -147,7 +156,7 @@ class TestDeliverEmailToChannel:
         client = FakeClient(channel)
         attachments = [EmailAttachment("a.png", "image/png", b"123")]
 
-        message, _ = await dc.deliver_email_to_channel(client, 1, "hello", attachments=attachments)
+        message, _ = await dc.deliver_email_to_channel(client, 1, "hello", "Alice", attachments=attachments)
 
         content, files = channel.sent[-1]
         assert message is not None
@@ -159,7 +168,7 @@ class TestDeliverEmailToChannel:
         client = FakeClient(channel)
 
         message, was_reply = await dc.deliver_email_to_channel(
-            client, 1, "hello", reply_to_discord_message_id="123"
+            client, 1, "hello", "Alice", reply_to_discord_message_id="123"
         )
 
         assert was_reply is True
@@ -170,23 +179,23 @@ class TestDeliverEmailToChannel:
         client = FakeClient(channel)
 
         message, was_reply = await dc.deliver_email_to_channel(
-            client, 1, "hello", reply_to_discord_message_id="123"
+            client, 1, "hello", "Alice", reply_to_discord_message_id="123"
         )
 
         assert was_reply is False
         assert message is not None
-        assert channel.sent[-1][0].startswith(dc.EMAIL_REPLY_UNAVAILABLE_PREFIX)
+        assert channel.sent[-1][0].startswith(dc.EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE.format(name="Alice"))
 
     async def test_parent_deleted_skips_reply_attempt_entirely(self):
         channel = FakeChannel(raise_on_fetch=True)  # would blow up if fetch_message were ever called
         client = FakeClient(channel)
 
         message, was_reply = await dc.deliver_email_to_channel(
-            client, 1, "hello", reply_to_discord_message_id="123", parent_deleted=True
+            client, 1, "hello", "Alice", reply_to_discord_message_id="123", parent_deleted=True
         )
 
         assert was_reply is False
-        assert channel.sent[-1][0].startswith(dc.EMAIL_REPLY_DELETED_PREFIX)
+        assert channel.sent[-1][0].startswith(dc.EMAIL_REPLY_DELETED_PREFIX_TEMPLATE.format(name="Alice"))
 
     async def test_channel_not_found_returns_none(self):
         class MissingChannelClient:
@@ -196,7 +205,7 @@ class TestDeliverEmailToChannel:
             async def fetch_channel(self, channel_id):
                 raise discord.DiscordException("no such channel")
 
-        message, was_reply = await dc.deliver_email_to_channel(MissingChannelClient(), 1, "hello")
+        message, was_reply = await dc.deliver_email_to_channel(MissingChannelClient(), 1, "hello", "Alice")
 
         assert message is None
         assert was_reply is False

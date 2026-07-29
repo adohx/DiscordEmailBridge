@@ -22,7 +22,7 @@ It's intentionally narrow in scope:
 One Discord channel
 One bridge email account
 One or more target email recipients (comma-separated)
-One allowed reply email address
+One or more allowed reply email addresses, each with a display name (comma-separated)
 Plain-text messages only
 ```
 
@@ -68,9 +68,9 @@ the Discord channel, and from the Discord channel back into the mailbox.
   Discord reply to the original message, not just a plain message.
 - **Edit / delete notifications**: editing or deleting a bridged Discord
   message sends an `[Updated]` / `[Deleted]` follow-up email.
-- **Security by default**: only one allowed reply sender, no admin bot
-  permissions, `@everyone`/`@here` mentions are sanitized, and duplicate
-  messages/emails are never re-processed.
+- **Security by default**: only an explicit allowlist of reply senders, no
+  admin bot permissions, `@everyone`/`@here` mentions are sanitized, and
+  duplicate messages/emails are never re-processed.
 
 ## See It in Action
 

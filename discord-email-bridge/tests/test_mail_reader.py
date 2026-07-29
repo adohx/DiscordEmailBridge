@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from conftest import make_config
 from mail_reader import (
     MAX_ATTACHMENT_BYTES,
     _extract_image_attachments,
@@ -9,6 +10,7 @@ from mail_reader import (
     _get_email_id,
     _parse_references,
     _resolve_parent_discord_message_id,
+    _resolve_sender_name,
     strip_quoted_history,
 )
 from state import State
@@ -178,3 +180,21 @@ class TestResolveParentDiscordMessageId:
         state.add_mapping({"bridge_id": "bridge-2", "discord_message_id": "d2", "email_message_id": "<msg2@x>"})
         result = _resolve_parent_discord_message_id(state, "<msg1@x>", ["<msg2@x>"], None)
         assert result == "d1"
+
+
+class TestResolveSenderName:
+    @pytest.fixture
+    def config(self):
+        return make_config(allowed_email_senders={"alice@example.com": "Alice", "bob@example.com": "Bob"})
+
+    def test_returns_name_for_allowed_sender(self, config):
+        assert _resolve_sender_name(config, "alice@example.com") == "Alice"
+
+    def test_is_case_insensitive(self, config):
+        assert _resolve_sender_name(config, "Alice@Example.com") == "Alice"
+
+    def test_strips_whitespace(self, config):
+        assert _resolve_sender_name(config, "  bob@example.com  ") == "Bob"
+
+    def test_returns_none_for_unknown_sender(self, config):
+        assert _resolve_sender_name(config, "eve@example.com") is None

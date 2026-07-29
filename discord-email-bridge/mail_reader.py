@@ -49,6 +49,7 @@ class IncomingEmail:
     """A validated, ready-to-deliver email reply plus its threading context."""
 
     sender: str
+    sender_name: str
     body: str
     email_message_id: Optional[str]
     in_reply_to: Optional[str]
@@ -130,6 +131,11 @@ def _resolve_parent_discord_message_id(
     return None
 
 
+def _resolve_sender_name(config: Config, sender_email: str) -> Optional[str]:
+    """Return the configured display name for an allowed sender, or None if not allowed."""
+    return config.allowed_email_senders.get(sender_email.strip().lower())
+
+
 def _extract_plain_text(msg: MailMessage) -> Optional[str]:
     if msg.text and msg.text.strip():
         return msg.text
@@ -180,9 +186,10 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
         for msg in messages:
             email_id = _get_email_id(msg)
             sender = (msg.from_ or "").strip()
+            sender_name = _resolve_sender_name(config, sender)
 
-            if sender.lower() != config.allowed_email_sender.lower():
-                logger.info("Ignoring email from %s: not the allowed sender.", sender)
+            if sender_name is None:
+                logger.info("Ignoring email from %s: not an allowed sender.", sender)
                 mailbox.flag(msg.uid, MailMessageFlags.SEEN, True)
                 continue
 
@@ -223,6 +230,7 @@ def poll_mailbox(config: Config, state: State, on_valid_email: OnValidEmail) -> 
 
             incoming = IncomingEmail(
                 sender=sender,
+                sender_name=sender_name,
                 body=clean_body,
                 email_message_id=normalize_message_id(_get_header(msg, "message-id")),
                 in_reply_to=in_reply_to,

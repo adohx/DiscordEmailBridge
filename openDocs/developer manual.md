@@ -64,13 +64,14 @@ Fill in `.env` field by field (field definitions are in `config.py`):
 |   `IMAP_HOST` / `IMAP_PORT`     |   Yes    | Gmail: `imap.gmail.com` / `993`                             |
 | `IMAP_USER` / `IMAP_PASSWORD`   |   Yes    | Same as SMTP, using the same app password                   |
 |         `TARGET_EMAILS`         |   Yes    | Comma-separated list of mailboxes that receive Discord messages (one is fine) |
-|    `ALLOWED_EMAIL_SENDER`       |   Yes    | The only email address allowed to reply and be forwarded back to Discord |
+|   `ALLOWED_EMAIL_SENDERS`       |   Yes    | Comma-separated list of email addresses allowed to reply and be forwarded back to Discord |
+| `ALLOWED_EMAIL_SENDER_NAMES`    |   Yes    | Comma-separated display names, paired POSITIONALLY with `ALLOWED_EMAIL_SENDERS` (the Nth name goes with the Nth email) -- e.g. `Alice` for the first sender shows as "📧 Email reply from Alice:". Not parsed from the email, set explicitly |
 | `EMAIL_POLL_INTERVAL_SECONDS`   |   Yes    | Mailbox polling interval in seconds, `60` recommended        |
 |         `STATE_FILE`            |   No     | Path to the state file, defaults to `state.json`             |
 |   `EMAIL_MESSAGE_ID_DOMAIN`     |   No     | Domain used to build email Message-IDs, defaults to `bridge.local`; doesn't need to be a real domain |
 |   `INCLUDE_DELETED_CONTENT`     |   No     | Whether delete-notification emails include the original content, defaults to `true` |
 
-In the simplest case, `TARGET_EMAILS` has one address and it's the same person's mailbox as `ALLOWED_EMAIL_SENDER`. `TARGET_EMAILS` accepts multiple comma-separated recipients (e.g. `TARGET_EMAILS=alice@example.com,bob@example.com`) — every recipient gets every Discord message, edit and delete notification. `ALLOWED_EMAIL_SENDER` still accepts only one sender for replies; anyone else's reply is ignored (see `mail_reader.poll_mailbox`).
+In the simplest case, `TARGET_EMAILS` and `ALLOWED_EMAIL_SENDERS` each have one address, the same person's mailbox. Both accept multiple comma-separated values (e.g. `TARGET_EMAILS=alice@example.com,bob@example.com`) — every `TARGET_EMAILS` recipient gets every Discord message, edit and delete notification, and every `ALLOWED_EMAIL_SENDERS` address can reply; anyone else's reply is ignored (see `mail_reader.poll_mailbox`). `ALLOWED_EMAIL_SENDER_NAMES` must line up positionally with `ALLOWED_EMAIL_SENDERS` -- mismatched list lengths fail config loading immediately rather than silently misattributing a reply to the wrong name.
 
 **`.env` must not be committed to Git** (already excluded via `.gitignore`).
 
@@ -201,7 +202,7 @@ discord_client.on_raw_message_edit / on_raw_message_delete
 | :---------------------------: | :---------------------------------------------------------------: | :----------: | :----------------------------: | :--------------: |
 |          `config.py`          | Required environment variables missing → refuse to start and report an error; no hardcoded secrets | Done | Manually tested | 0.1 |
 |      `discord_client.py`      | · Can read and send Discord messages<br/>· Ignores messages sent by the bot itself, to avoid infinite forwarding loops<br/>· Cleans up `@everyone`/`@here` mentions before forwarding to Discord, to prevent accidental pings<br/>· Safely truncates overly long Discord messages with a notice appended (1800-character cap)<br/>· When the Discord parent message of an email reply has been deleted, degrades to a plain channel message instead of erroring | Done | Manually tested | 0.1 |
-|       `mail_reader.py`        | · Can read email (IMAP polling)<br/>· Only trusts email from `ALLOWED_EMAIL_SENDER`; all other email is ignored<br/>· Email body prefers plain text, strips quoted history (e.g. "On ... wrote:") | Done | Manually tested | 0.1 |
+|       `mail_reader.py`        | · Can read email (IMAP polling)<br/>· Only trusts email from an address in `ALLOWED_EMAIL_SENDERS`; all other email is ignored<br/>· Email body prefers plain text, strips quoted history (e.g. "On ... wrote:") | Done | Manually tested | 0.1 |
 |       `mail_sender.py`        | · Can send email (SMTP)<br/>· When a Discord message is edited, the mailbox receives an `[Updated]` notification email with a before/after content diff<br/>· When a Discord message is deleted, the mailbox receives a `[Deleted]` notification email | Done | Manually tested | 0.1 |
 |       `mail_sender.py`        | The mailbox side can clearly distinguish "a new conversation" from "continuing an existing one" — see 3.1 for the determination rules;<br/>the remaining open item is whether the email subject should be reused / prefixed with `Re:` | Partially done | Grouping mechanism tested;<br/>subject-line reuse details still TBD | 0.3 |
 |          `state.py`           | · The same Discord message or the same email is never processed twice (dedup)<br/>· Local JSON state file is written atomically, and auto-backed-up/rebuilt on corruption | Done | Manually tested | 0.1 |

@@ -233,6 +233,7 @@ async def handle_incoming_email(
         client,
         config.discord_channel_id,
         incoming.body,
+        incoming.sender_name,
         reply_to_discord_message_id=incoming.parent_discord_message_id,
         parent_deleted=parent_deleted,
         attachments=incoming.attachments,

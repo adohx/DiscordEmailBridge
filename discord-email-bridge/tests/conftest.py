@@ -17,7 +17,7 @@ def make_config(**overrides) -> Config:
         imap_user="bridge@example.com",
         imap_password="secret",
         target_emails=["target@example.com"],
-        allowed_email_sender="allowed@example.com",
+        allowed_email_senders={"allowed@example.com": "Alice"},
         email_poll_interval_seconds=60,
         state_file="state.json",
         email_message_id_domain="bridge.local",

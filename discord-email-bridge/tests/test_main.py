@@ -225,6 +225,7 @@ class TestHandleIncomingEmail:
     def make_incoming(self, **overrides):
         defaults = dict(
             sender="user@example.com",
+            sender_name="Alice",
             body="hello from email",
             email_message_id="<e1@x>",
             in_reply_to=None,

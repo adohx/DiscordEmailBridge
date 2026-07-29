@@ -11,8 +11,6 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
 - Multiple email recipients: `TARGET_EMAILS` replaces `TARGET_EMAIL` and
   accepts a comma-separated list, so a Discord message (and its edit/delete
   notifications) can be broadcast to more than one mailbox.
-  `ALLOWED_EMAIL_SENDER` is unchanged — replies are still accepted from only
-  one address.
 - `deploy.sh`: one-shot installer for the systemd deployment (creates the
   dedicated system user, copies the project into `/opt`, installs and
   enables the service). `discord-email-bridge.service` also gained
@@ -29,6 +27,14 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   `uv run pytest` from `discord-email-bridge/`.
 - CI (`.github/workflows/tests.yml`): runs the test suite on every push/PR to
   `main` via GitHub Actions.
+- Multiple allowed reply senders: `ALLOWED_EMAIL_SENDER` is replaced by
+  `ALLOWED_EMAIL_SENDERS` (comma-separated), paired positionally with the new
+  `ALLOWED_EMAIL_SENDER_NAMES` (the Nth email gets the Nth name). Each
+  allowed sender's reply now shows up in Discord as "📧 Email reply from
+  {name}:" instead of the previous generic "📧 Email reply:". Names are set
+  explicitly rather than parsed from the email, since a `From` display name
+  isn't trustworthy input. A length mismatch between the two lists fails
+  config loading immediately instead of silently misattributing a reply.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make

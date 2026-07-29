@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_LENGTH = 1800
 TRUNCATION_NOTICE = "\n\n[Message truncated]"
-EMAIL_REPLY_PREFIX = "📧 Email reply:\n\n"
-EMAIL_REPLY_UNAVAILABLE_PREFIX = "📧 Email reply to an unavailable message:\n\n"
-EMAIL_REPLY_DELETED_PREFIX = "📧 Email reply to a deleted Discord message:\n\n"
+EMAIL_REPLY_PREFIX_TEMPLATE = "📧 Email reply from {name}:\n\n"
+EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE = "📧 Email reply from {name} to an unavailable message:\n\n"
+EMAIL_REPLY_DELETED_PREFIX_TEMPLATE = "📧 Email reply from {name} to a deleted Discord message:\n\n"
 
 # Called with the raw discord.Message whenever a valid message arrives in
 # the bridged channel (guild/channel already checked, author isn't a bot,
@@ -42,17 +42,19 @@ def clean_discord_mentions(text: str) -> str:
 
 def format_email_reply_for_discord(
     text: str,
+    sender_name: str,
     *,
     unavailable: bool = False,
     deleted: bool = False,
     notes: Optional[Sequence[str]] = None,
 ) -> str:
     if deleted:
-        prefix = EMAIL_REPLY_DELETED_PREFIX
+        template = EMAIL_REPLY_DELETED_PREFIX_TEMPLATE
     elif unavailable:
-        prefix = EMAIL_REPLY_UNAVAILABLE_PREFIX
+        template = EMAIL_REPLY_UNAVAILABLE_PREFIX_TEMPLATE
     else:
-        prefix = EMAIL_REPLY_PREFIX
+        template = EMAIL_REPLY_PREFIX_TEMPLATE
+    prefix = template.format(name=clean_discord_mentions(sender_name))
     cleaned = clean_discord_mentions(text)
 
     body_budget = MAX_MESSAGE_LENGTH - len(prefix)
@@ -187,12 +189,16 @@ async def deliver_email_to_channel(
     client: discord.Client,
     channel_id: int,
     text: str,
+    sender_name: str,
     reply_to_discord_message_id: Optional[str] = None,
     parent_deleted: bool = False,
     attachments: Optional[Sequence[EmailAttachment]] = None,
     attachment_notes: Optional[Sequence[str]] = None,
 ) -> Tuple[Optional[discord.Message], bool]:
     """Deliver an email-derived message into the bridged Discord channel.
+
+    `sender_name` is shown in the message prefix ("Email reply from {name}")
+    so the channel can tell who wrote it -- see config.ALLOWED_EMAIL_SENDER_NAME.
 
     If reply_to_discord_message_id is given, attempts a real Discord reply to
     that message first; falls back to a plain channel message if the
@@ -224,11 +230,11 @@ async def deliver_email_to_channel(
             "Discord message %s (parent of an email reply) was deleted; sending a normal channel message instead.",
             reply_to_discord_message_id,
         )
-        formatted = format_email_reply_for_discord(text, deleted=True, notes=attachment_notes)
+        formatted = format_email_reply_for_discord(text, sender_name, deleted=True, notes=attachment_notes)
     elif reply_to_discord_message_id:
         try:
             original_message = await channel.fetch_message(int(reply_to_discord_message_id))
-            formatted = format_email_reply_for_discord(text, unavailable=False, notes=attachment_notes)
+            formatted = format_email_reply_for_discord(text, sender_name, unavailable=False, notes=attachment_notes)
 
             async def _reply(content: str, files: Optional[List[discord.File]]) -> discord.Message:
                 return await original_message.reply(
@@ -243,9 +249,9 @@ async def deliver_email_to_channel(
                 reply_to_discord_message_id,
                 exc,
             )
-            formatted = format_email_reply_for_discord(text, unavailable=True, notes=attachment_notes)
+            formatted = format_email_reply_for_discord(text, sender_name, unavailable=True, notes=attachment_notes)
     else:
-        formatted = format_email_reply_for_discord(text, unavailable=False, notes=attachment_notes)
+        formatted = format_email_reply_for_discord(text, sender_name, unavailable=False, notes=attachment_notes)
 
     try:
         async def _channel_send(content: str, files: Optional[List[discord.File]]) -> discord.Message:
