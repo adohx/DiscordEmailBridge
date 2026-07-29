@@ -132,57 +132,85 @@ class TestExtractPlainText:
         assert _extract_plain_text(make_msg()) is None
 
 
-class TestExtractImageAttachments:
+class TestExtractForwardableAttachments:
     def test_no_attachments_returns_empty(self):
-        images, notes = _extract_image_attachments(make_msg())
-        assert images == []
+        attachments, notes = _extract_forwardable_attachments(make_msg())
+        assert attachments == []
         assert notes == []
 
     def test_accepts_image_under_limit(self):
         msg = make_msg(attachments=[make_attachment("cat.png", "image/png", b"x" * 100)])
-        images, notes = _extract_image_attachments(msg)
-        assert len(images) == 1
-        assert images[0].filename == "cat.png"
-        assert images[0].payload == b"x" * 100
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert len(attachments) == 1
+        assert attachments[0].filename == "cat.png"
+        assert attachments[0].payload == b"x" * 100
         assert notes == []
 
-    def test_rejects_non_image_with_note(self):
-        msg = make_msg(attachments=[make_attachment("doc.pdf", "application/pdf")])
-        images, notes = _extract_image_attachments(msg)
-        assert images == []
+    def test_accepts_pdf_under_limit(self):
+        msg = make_msg(attachments=[make_attachment("report.pdf", "application/pdf", b"x" * 100)])
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert len(attachments) == 1
+        assert attachments[0].filename == "report.pdf"
+        assert notes == []
+
+    def test_accepts_doc_under_limit(self):
+        msg = make_msg(attachments=[make_attachment("notes.doc", "application/msword", b"x" * 100)])
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert len(attachments) == 1
+        assert notes == []
+
+    def test_accepts_docx_under_limit(self):
+        msg = make_msg(
+            attachments=[
+                make_attachment(
+                    "notes.docx",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    b"x" * 100,
+                )
+            ]
+        )
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert len(attachments) == 1
+        assert notes == []
+
+    def test_rejects_unsupported_format_with_note(self):
+        msg = make_msg(attachments=[make_attachment("archive.zip", "application/zip")])
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert attachments == []
         assert len(notes) == 1
-        assert "doc.pdf" in notes[0]
+        assert "archive.zip" in notes[0]
         assert "unsupported format" in notes[0]
 
-    def test_rejects_oversized_image_with_note(self):
+    def test_rejects_oversized_attachment_with_note(self):
         oversized = make_attachment("huge.jpg", "image/jpeg", b"x" * (MAX_ATTACHMENT_BYTES + 1))
-        images, notes = _extract_image_attachments(make_msg(attachments=[oversized]))
-        assert images == []
+        attachments, notes = _extract_forwardable_attachments(make_msg(attachments=[oversized]))
+        assert attachments == []
         assert len(notes) == 1
         assert "huge.jpg" in notes[0]
         assert "exceeds" in notes[0]
 
-    def test_accepts_image_exactly_at_limit(self):
+    def test_accepts_attachment_exactly_at_limit(self):
         at_limit = make_attachment("edge.png", "image/png", b"x" * MAX_ATTACHMENT_BYTES)
-        images, notes = _extract_image_attachments(make_msg(attachments=[at_limit]))
-        assert len(images) == 1
+        attachments, notes = _extract_forwardable_attachments(make_msg(attachments=[at_limit]))
+        assert len(attachments) == 1
         assert notes == []
 
     def test_unnamed_attachment_gets_placeholder_name(self):
-        msg = make_msg(attachments=[make_attachment("", "application/pdf")])
-        _, notes = _extract_image_attachments(msg)
+        msg = make_msg(attachments=[make_attachment("", "application/zip")])
+        _, notes = _extract_forwardable_attachments(msg)
         assert "(unnamed attachment)" in notes[0]
 
     def test_mixed_attachments_split_correctly(self):
         msg = make_msg(
             attachments=[
                 make_attachment("good.png", "image/png", b"x" * 10),
-                make_attachment("bad.pdf", "application/pdf"),
+                make_attachment("report.pdf", "application/pdf", b"x" * 10),
+                make_attachment("bad.zip", "application/zip"),
                 make_attachment("huge.jpg", "image/jpeg", b"x" * (MAX_ATTACHMENT_BYTES + 1)),
             ]
         )
-        images, notes = _extract_image_attachments(msg)
-        assert [i.filename for i in images] == ["good.png"]
+        attachments, notes = _extract_forwardable_attachments(msg)
+        assert [a.filename for a in attachments] == ["good.png", "report.pdf"]
         assert len(notes) == 2
 
 

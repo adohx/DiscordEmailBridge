@@ -81,7 +81,7 @@ def _build_discord_files(attachments: Sequence[EmailAttachment]) -> List[discord
 
 
 async def _send_with_attachment_fallback(send, text: str, files: List[discord.File]) -> discord.Message:
-    """Try sending with image files attached; on failure, retry text-only with a notice.
+    """Try sending with files attached; on failure, retry text-only with a notice.
 
     `send` is an async callable taking (content, files) -> discord.Message. Raises
     discord.DiscordException if even the text-only retry fails.
@@ -90,8 +90,8 @@ async def _send_with_attachment_fallback(send, text: str, files: List[discord.Fi
         try:
             return await send(text, files)
         except discord.DiscordException:
-            logger.exception("Failed to upload %d image attachment(s) to Discord; retrying without them.", len(files))
-            text += f"\n\n⚠️ {len(files)} image attachment(s) failed to upload and were not forwarded."
+            logger.exception("Failed to upload %d attachment(s) to Discord; retrying without them.", len(files))
+            text += f"\n\n⚠️ {len(files)} attachment(s) failed to upload and were not forwarded."
     return await send(text, None)
 
 
@@ -233,12 +233,12 @@ async def deliver_email_to_channel(
     to be deleted, so no reply attempt is made at all -- see
     discord-message-edit-delete-sync.md #12.
 
-    `attachments` are image attachments extracted from the source email; they
-    are uploaded as Discord files. `attachment_notes` are human-readable
-    notices about attachments that were NOT forwarded (wrong format, too
-    large) -- always appended to the message text so nothing is dropped
-    silently. If uploading the images themselves fails, the message is
-    retried without them and a notice is appended too.
+    `attachments` are forwardable attachments (images, PDF, DOC, DOCX)
+    extracted from the source email; they are uploaded as Discord files.
+    `attachment_notes` are human-readable notices about attachments that were
+    NOT forwarded (wrong format, too large) -- always appended to the message
+    text so nothing is dropped silently. If uploading the files themselves
+    fails, the message is retried without them and a notice is appended too.
 
     Returns (sent_message, was_real_reply). sent_message is None on failure.
     """

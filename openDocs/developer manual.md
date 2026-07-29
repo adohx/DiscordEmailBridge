@@ -34,7 +34,7 @@ The screenshots in the User Manual start from "you already have an invite link."
 
    > ![image-20260714181210911](zh/assets/image-20260714181210911.png)
 
-5. Invite the Bot to the target Server and Channel with minimal permissions — for the detailed step-by-step with screenshots, see Section 1 of the User Manual (generating the invite link, choosing the Server, checking `Send Messages` + `Read Message History`, and separately enabling `View Channel` on just the target channel). Not repeated here.
+5. Invite the Bot to the target Server and Channel with minimal permissions — for the detailed step-by-step with screenshots, see Section 1 of the User Manual (generating the invite link, choosing the Server, checking `Send Messages` + `Read Message History` + `Attach Files`, and separately enabling `View Channel` on just the target channel). `Attach Files` is required for email attachment forwarding (images, PDF, DOC, DOCX) — without it, forwarding falls back to a text-only message with a "failed to upload" notice (`discord.errors.Forbidden: 403 Forbidden (error code: 50013): Missing Permissions`). Not repeated here.
 6. Get the Channel ID: Discord client → Settings → Advanced → turn on "Developer Mode"; then right-click the target channel → Copy Channel ID.
 
    > ![image-20260714181311859](zh/assets/image-20260714181311859.png)

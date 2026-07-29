@@ -32,15 +32,15 @@ Once the bot has been created, you will have a link, for example `https://discor
 
 ![image-20260714142618549](./zh/assets/image-20260714142618549.png)
 
-2. After selecting **Add to Server**, the following screen will appear. At this point, you need to confirm the currently logged-in user info that is highlighted, and choose the target server you want to add the bot to from the dropdown menu. Carefully check the highlighted areas: the currently logged-in user, the bot's permissions (fewer is better — two are enough here), and the name of the target server.
+2. After selecting **Add to Server**, the following screen will appear. At this point, you need to confirm the currently logged-in user info that is highlighted, and choose the target server you want to add the bot to from the dropdown menu. Carefully check the highlighted areas: the currently logged-in user, the bot's permissions (fewer is better — three are enough here), and the name of the target server.
 
 ![image-20260714145136366](./zh/assets/image-20260714145136366.png)
 
-3. Confirm the chat permissions the bot needs. To strictly limit the bot's permissions, make sure the permission list only contains **Send Messages** and **Read Message History**. Note that **View Channel** is intentionally not added here, in order to control access. These permissions apply to the entire server — if **View Channel** were granted here, the bot would be able to browse every channel's information, just like a regular member. By only granting **Send Messages** and **Read Message History**, the bot cannot access any channel by default, meaning it cannot access any information in the server (including sending or receiving messages). In the next step, **View Channel** will be enabled on a specific channel only, so that the bot can access that one channel exclusively.
+3. Confirm the chat permissions the bot needs. To strictly limit the bot's permissions, make sure the permission list only contains **Send Messages**, **Read Message History**, and **Attach Files** (needed so email attachments — images, PDF, DOC, DOCX — can be forwarded into Discord; not pictured in the screenshot below since it predates that feature, but check it anyway). Note that **View Channel** is intentionally not added here, in order to control access. These permissions apply to the entire server — if **View Channel** were granted here, the bot would be able to browse every channel's information, just like a regular member. By only granting **Send Messages**, **Read Message History**, and **Attach Files**, the bot cannot access any channel by default, meaning it cannot access any information in the server (including sending or receiving messages). In the next step, **View Channel** will be enabled on a specific channel only, so that the bot can access that one channel exclusively.
 
 ![image-20260714150101953](./zh/assets/image-20260714150101953.png)
 
-4. Grant the bot permissions on the channel where you want to enable it. Again, to strictly control permissions, keep every permission set to "x" (denied) except **Send Messages**, **Read Message History**, and **View Channel**, which should remain enabled.
+4. Grant the bot permissions on the channel where you want to enable it. Again, to strictly control permissions, keep every permission set to "x" (denied) except **Send Messages**, **Read Message History**, **Attach Files**, and **View Channel**, which should remain enabled.
 
 ![image-20260714150850807](./zh/assets/image-20260714150850807.png)
 

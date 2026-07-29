@@ -27,10 +27,10 @@ Plain-text messages only
 ```
 
 Not supported (yet): multiple channels/servers/users, Discord Threads, exact
-email-thread mapping, non-image attachment forwarding, full HTML rendering,
-a web admin panel, OAuth, rich-text messages. See the
-[CHANGELOG](discord-email-bridge/CHANGELOG.md) for what's actually planned
-next.
+email-thread mapping, arbitrary attachment types (only images/PDF/DOC/DOCX
+are forwarded), full HTML rendering, a web admin panel, OAuth, rich-text
+messages. See the [CHANGELOG](discord-email-bridge/CHANGELOG.md) for what's
+actually planned next.
 
 ## How It Works
 
@@ -61,9 +61,9 @@ the Discord channel, and from the Discord channel back into the mailbox.
 - **Discord reply → Email**: native Discord replies show up in the email as a
   quote of the original message plus the new reply.
 - **Email → Discord**: replying to the bridge mailbox posts the message into
-  the Discord channel. Image attachments (under 8 MB) are forwarded as
-  Discord files; unsupported or oversized attachments are dropped with a
-  visible notice instead of silently disappearing.
+  the Discord channel. Image, PDF, DOC, and DOCX attachments (under 8 MB)
+  are forwarded as Discord files as-is; unsupported or oversized attachments
+  are dropped with a visible notice instead of silently disappearing.
 - **Email reply → Discord reply**: replying to a bridged email posts a real
   Discord reply to the original message, not just a plain message.
 - **Edit / delete notifications**: editing or deleting a bridged Discord
@@ -117,7 +117,8 @@ in detail.
 
 - Do not commit `.env` to Git (already excluded via `.gitignore`).
 - Do not grant the Discord bot `Administrator` — it only needs `View
-  Channel` / `Read Message History` / `Send Messages` on one channel.
+  Channel` / `Read Message History` / `Send Messages` / `Attach Files` on
+  one channel.
 - Use a dedicated bridge mailbox, not your personal inbox, and an app
   password rather than your real login password.
 - No secrets are hardcoded; everything sensitive is read from `.env`.

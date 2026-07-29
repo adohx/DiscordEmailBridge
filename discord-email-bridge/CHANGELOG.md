@@ -15,12 +15,16 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   dedicated system user, copies the project into `/opt`, installs and
   enables the service). `discord-email-bridge.service` also gained
   sandboxing directives (`ProtectSystem=strict`, `NoNewPrivileges`, etc).
-- Email → Discord image attachments: image attachments under 8 MB are now
-  forwarded as Discord files (an email can be attachment-only, with no text
-  body, and still get through). Non-image or oversized attachments are
-  dropped with a visible `⚠️` notice in the Discord message instead of
-  disappearing silently; if the image upload itself fails, the message is
-  retried without it and a notice is added.
+- Email → Discord attachment forwarding: image, PDF, DOC, and DOCX
+  attachments under 8 MB are now forwarded as Discord files, as-is (an email
+  can be attachment-only, with no text body, and still get through).
+  Unsupported or oversized attachments are dropped with a visible `⚠️`
+  notice in the Discord message instead of disappearing silently; if the
+  upload itself fails, the message is retried without it and a notice is
+  added. Requires the bot to have the `Attach Files` channel permission --
+  without it, every upload fails with `discord.errors.Forbidden: 403
+  Forbidden (error code: 50013): Missing Permissions` and falls back to the
+  text-only + notice path. See the Developer/User Manual for how to grant it.
 - Automated test suite (`pytest`, `pytest-asyncio`): unit tests for the pure
   logic in `state.py`, `mail_reader.py`, `discord_client.py`, `mail_sender.py`,
   plus handler-level tests in `main.py` with Discord/SMTP mocked out. Run with
@@ -48,6 +52,13 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
 - A Discord display name containing a stray CR/LF character would make
   `EmailMessage` reject the Subject header and silently drop the whole
   message; author names are now sanitized before being placed in a header.
+- Forwarding an email (Gmail's "---------- Forwarded message ---------"
+  format) into the bridge silently dropped the entire forwarded body: the
+  quote-stripping heuristic treated the forward's `From:`/`Subject:` header
+  block the same as a reply's quoted history and cut everything from that
+  point on, including the actual content the sender meant to share. Now only
+  the header block right under the forward marker is skipped; the real body
+  after it is kept.
 
 ### Planned — 0.2
 - Docker-based deployment (Dockerfile / docker-compose), so the bridge can be
