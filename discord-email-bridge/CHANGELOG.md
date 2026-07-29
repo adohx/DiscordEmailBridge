@@ -23,6 +23,10 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
   dropped with a visible `⚠️` notice in the Discord message instead of
   disappearing silently; if the image upload itself fails, the message is
   retried without it and a notice is added.
+- Automated test suite (`pytest`, `pytest-asyncio`): unit tests for the pure
+  logic in `state.py`, `mail_reader.py`, `discord_client.py`, `mail_sender.py`,
+  plus handler-level tests in `main.py` with Discord/SMTP mocked out. Run with
+  `uv run pytest` from `discord-email-bridge/`.
 
 ### Fixed
 - A Discord display name containing a stray CR/LF character would make
@@ -37,7 +41,6 @@ follows [Keep a Changelog](https://keepachangelog.com/), versions follow
 - Finalize the email-side conversation rules: decide whether reply emails
   should reuse the original subject (`Re:` prefix) so subject-based mail
   clients group them correctly, not just `References`-based clients.
-- Automated test suite.
 
 ### Planned — 0.4
 - HTML-only email support: extract readable content from emails that have no

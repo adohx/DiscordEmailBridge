@@ -100,6 +100,16 @@ This project uses [uv](https://docs.astral.sh/uv/) to manage dependencies and th
 
    > ![image-20260714181846156](zh/assets/image-20260714181846156.png)
 
+### Running the test suite
+
+`uv sync` also installs the `dev` dependency group (`pytest`, `pytest-asyncio`). Run all tests from `discord-email-bridge/`:
+
+```bash
+uv run pytest
+```
+
+The tests never touch a real Discord/SMTP/IMAP server -- Discord and network calls are mocked, and `state.py` tests use a temporary file. If your shell has something like ROS sourced that injects its own `PYTHONPATH`, it can leak unrelated pytest plugins into this venv and crash collection with an unrelated `ModuleNotFoundError`; if that happens, run `PYTHONPATH= uv run pytest` instead.
+
 For long-term running, systemd is recommended (Ubuntu scenario). The repo includes a ready-made `discord-email-bridge.service` template plus `deploy.sh`, which creates a dedicated `discordbridge` system user, copies the project into `/opt/discord-email-bridge`, and installs + enables the service:
 
 ```bash

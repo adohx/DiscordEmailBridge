@@ -8,3 +8,14 @@ dependencies = [
     "imap-tools>=1.5,<2",
     "python-dotenv>=1.0,<2",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
